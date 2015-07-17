@@ -9,8 +9,7 @@
   <property name="M_PI" value="3.14159"/>
   <property name="SCALE" value="0.0254"/>
 
-
-
+<link name="base_footprint" />
 
 <link name="base_link">
     <inertial>
@@ -34,11 +33,10 @@
       </geometry>
     </collision>
   </link>
+  
+  <link name="imu_link" />
 
-
- 
-
-  <!--joint name="base_footprint_joint" type="fixed">
+  <joint name="base_footprint_joint" type="fixed">
     <origin xyz="0 0 0.0381" rpy="0 0 0" />
     <parent link="base_footprint"/>
     <child link="base_link" />
@@ -48,7 +46,7 @@
     <origin xyz="0 0 0.0" rpy="0 0 0" />
     <parent link="base_link"/>
     <child link="imu_link" />
-  </joint-->
+  </joint>
 
 
 </robot>

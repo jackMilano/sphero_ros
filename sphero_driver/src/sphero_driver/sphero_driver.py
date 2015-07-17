@@ -97,6 +97,7 @@ REQ = dict(
   CMD_GET_APP_CONFIG_BLK = [0x02, 0x05],
   CMD_SET_DATA_STRM = [0x02, 0x11],
   CMD_CFG_COL_DET = [0x02, 0x12],
+  CMD_CFG_LOCATOR = [0x02, 0x13],
   CMD_SET_RGB_LED = [0x02, 0x20],
   CMD_SET_BACK_LED = [0x02, 0x21],
   CMD_GET_RGB_LED = [0x02, 0x22],
@@ -104,6 +105,10 @@ REQ = dict(
   CMD_BOOST = [0x02, 0x31],
   CMD_SET_RAW_MOTORS = [0x02, 0x33],
   CMD_SET_MOTION_TO = [0x02, 0x34],
+  CMD_SET_PERM_OPT_FLAGS = [0x02, 0x35],
+  CMD_GET_PERM_OPT_FLAGS = [0x02, 0x36],
+  CMD_SET_TMP_OPT_FLAGS = [0x02, 0x37],
+  CMD_GET_TMP_OPT_FLAGS = [0x02, 0x38],
   CMD_GET_CONFIG_BLK = [0x02, 0x40],
   CMD_SET_DEVICE_MODE = [0x02, 0x42],
   CMD_SET_CFG_BLOCK = [0x02, 0x43],
@@ -157,7 +162,57 @@ STRM_MASK2 = dict(
   ACCELONE           = 0x02000000,
   VELOCITY_X         = 0x01000000,
   VELOCITY_Y         = 0x00800000)
+  
+MACRO_CMD = dict(
+  MACRO_END             = 0x00,
+  SET_SD1               = 0x01,
+  SET_SD2               = 0x02,
+  SET_STABILIZATION     = 0x03,
+  SET_HEADING           = 0x04,
+  ROLL                  = 0x05,
+  ROLL_WITH_SD1         = 0x06,
+  SET_RGB_LED           = 0x07,
+  SET_RGB_LED_WITH_SD2  = 0x08,
+  SET_BACK_LED          = 0x09,
+  SET_RAW_MOTOR_VALUES  = 0x0a,
+  DELAY                 = 0x0b,
+  GOTO                  = 0x0c,
+  GOSUB                 = 0x0d,
+  GO_TO_SLEEP           = 0x0e,
+  SET_SPD1              = 0x0f,
+  SET_SPD2              = 0x10,
+  ROLL_AT_SPD1_WITH_SD1 = 0x11,
+  ROLL_AT_SPD2_WITH_SD1 = 0x12,
+  SET_ROTATION_RATE     = 0x13,
+  FADE_TO_RGB           = 0x14,
+  EMIT_MARKER           = 0x15,
+  WAIT_UNTIL_STOPPED    = 0x19,
+  ROTATE_OVER_TIME      = 0x1a,
+  STREAM_END            = 0x1b,
+  ROLL2                 = 0x1d,
+  LOOP_START            = 0x1e,
+  LOOP_END              = 0x1f,
+  COMMENT               = 0x20,
+  ROTATE_OVER_SD1       = 0x21,
+  ROTATE_OVER_SD2       = 0x22,
+  BRANCH_ON_COLLISION   = 0x23,
+  LOOP_START_SYSTEM     = 0x24,
+  SET_SPEED             = 0x25,
+  CFG_COLLISION_DETECTION = 0x27)
 
+PERM_FLAG = dict(
+  PREVENT_SLEEP_WHEN_CHARGING_AND_CONNECTED = 0x00000001,
+  ENABLE_VECTOR_DRIVE                       = 0x00000002,
+  DISABLE_SELF_LEVEL_WHEN_CHARGING          = 0x00000004,
+  BACK_LED_ALWAYS_ON                        = 0x00000008,
+  ENABLE_MOTION_TO                          = 0x00000010,
+  ENABLE_RETAIL_DEMO_MODE                   = 0x00000020,
+  AWAKE_SENSITIVITY_LIGHT                   = 0x00000040,
+  AWAKE_SENSITIVITY_HEAVY                   = 0x00000080,
+  ENABLE_GYRO_MAX_ASYNC_MSG                 = 0x00000100) #not supported in fw version 1.47
+
+TMP_FLAG = dict(
+  ENABLE_STOP_ON_DISCONNECT = 0x00000001)
 
 class BTInterface(object):
 
@@ -201,7 +256,7 @@ class BTInterface(object):
       self.sock=bluetooth.BluetoothSocket(bluetooth.RFCOMM)
       self.sock.connect((bdaddr,self.port))
     except bluetooth.btcommon.BluetoothError as error:
-      sys.stdout.write(error)
+      print 'Connection error: ', error
       sys.stdout.flush()
       time.sleep(5.0)
       sys.exit(1)
@@ -290,7 +345,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_PING'],[]), response)
 
-  def get_version(self, response):
+  def get_version(self, response = True):
     """
     The Get Versioning command returns a whole slew of software and
     hardware information.
@@ -299,7 +354,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_VERSION'],[]), response)
 
-  def set_device_name(self, name, response):
+  def set_device_name(self, name, response = False):
     """
     This assigned name is held internally and produced as part of the
     Get Bluetooth Info service below. Names are clipped at 48
@@ -312,7 +367,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_SET_BT_NAME'],[name]), response)
 
-  def get_bt_name(self, response):
+  def get_bt_name(self, response = True):
     """
     This returns the textual name (in ASCII) that the Bluetooth module
     advertises. It also returns the BTA Bluetooth Address or MAC ID
@@ -324,7 +379,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_GET_BT_NAME'],[]), response)
 
-  def set_auto_reconnect(self, enable, time, response):
+  def set_auto_reconnect(self, enable, time, response = False):
     """
     This configures the control of the Bluetooth module in its attempt
     to automatically reconnect with the last iPhone device. This is a
@@ -342,7 +397,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_SET_AUTO_RECONNECT'],[enable,time]), response)
 
-  def get_auto_reconnect(self, response):
+  def get_auto_reconnect(self, response = True):
     """
     This returns the Bluetooth auto reconnect values as defined in the
     Set Auto Reconnect command.
@@ -351,7 +406,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_GET_AUTO_RECONNECT'],[]), reponse)
 
-  def get_power_state(self, response):
+  def get_power_state(self, response = True):
     """
     This returns the current power state and some additional
     parameters to the Client.
@@ -360,7 +415,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_GET_PWR_STATE'],[]), response)
 
-  def set_power_notify(self, enable, response):
+  def set_power_notify(self, enable, response = False):
     """
     This enables Sphero to asynchronously notify the Client
     periodically with the power state or immediately when the power
@@ -373,7 +428,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_SET_PWR_NOTIFY'],[enable]), response)
 
-  def go_to_sleep(self, time, macro, response):
+  def go_to_sleep(self, time = 0, macro = 0, response = False):
     """
     This puts Sphero to sleep immediately with two parameters: the
     first is the number of seconds after which it will automatically
@@ -387,7 +442,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_SLEEP'],[(time>>8), (time & 0xff), macro]), response)
 
-  def run_l1_diags(self, response):
+  def run_l1_diags(self, response = False):
     """
     This is a developer-level command to help diagnose aberrant
     behavior. Most system counters, process flags, and system states
@@ -399,7 +454,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_RUN_L1_DIAGS'],[]), response)
 
-  def run_l2_diags(self, response):
+  def run_l2_diags(self, response = False):
     """
     This is a developers-only command to help diagnose aberrant
     behavior. It is much less impactful than the Level 1 command as it
@@ -410,7 +465,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_RUN_L2_DIAGS'],[]), response)
 
-  def clear_counters(self, response):
+  def clear_counters(self, response = False):
     """
     This is a developers-only command to clear the various system
     counters described in the level 2 diag.
@@ -419,7 +474,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_CLEAR_COUNTERS'],[]), response)
 
-  def assign_counter_value(self, counter, response):
+  def assign_counter_value(self, counter, response = False):
     """
     Sphero contains a 32-bit counter that increments every millisecond
     when it's not in the Idle state. It has no absolute meaning and is
@@ -431,7 +486,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_ASSIGN_COUNTER'],[((counter>>24) & 0xff), ((counter>>16) & 0xff), ((counter>>8) & 0xff) ,(counter & 0xff)]), response)
 
-  def poll_packet_times(self, time, response):
+  def poll_packet_times(self, time, response = False):
     """
     This command helps the Client application profile the transmission
     and processing latencies in Sphero so that a relative
@@ -462,7 +517,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_POLL_TIME'],[((time>>24) & 0xff), ((time>>16) & 0xff), ((time>>8) & 0xff), (time & 0xff)]), response)
 
-  def set_heading(self, heading, response):
+  def set_heading(self, heading, response = False):
     """
     This allows the client to adjust the orientation of Sphero by
     commanding a new reference heading in degrees, which ranges from 0
@@ -475,7 +530,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_SET_HEADING'],[(heading>>8),(heading & 0xff)]), response)
 
-  def set_stablization(self, enable, response):
+  def set_stabilization(self, enable, response = False):
     """
     This turns on or off the internal stabilization of Sphero, in
     which the IMU is used to match the ball's orientation to its
@@ -487,7 +542,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_SET_STABILIZ'],[enable]), response)
 
-  def set_rotation_rate(self, rate, response):
+  def set_rotation_rate(self, rate, response = False):
     """
     This allows you to control the rotation rate that Sphero will use
     to meet new heading commands. The commanded value is in units of
@@ -502,7 +557,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_SET_ROTATION_RATE'],[self.clamp(rate, 0, 255)]), response)
 
-  def set_app_config_blk(self, app_data, response):
+  def set_app_config_blk(self, app_data, response = False):
     """
     This allows you to write a 32 byte block of data from the
     configuration block that is set aside for exclusive use by
@@ -513,7 +568,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_SET_APP_CONFIG_BLK'],[((app_data>>24) & 0xff), ((app_data>>16) & 0xff), ((app_data>>8) & 0xff), (app_data & 0xff)]), response)
 
-  def get_app_config_blk(self, response):
+  def get_app_config_blk(self, response = True):
     """
     This allows you to retrieve the application configuration block\
     that is set aside for exclusive use by applications.
@@ -521,7 +576,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_GET_APP_CONFIG_BLK'], []), response)
 
-  def set_data_strm(self, sample_div, sample_frames, sample_mask1, pcnt, sample_mask2, response):
+  def set_data_strm(self, sample_div, sample_frames, sample_mask1, pcnt, sample_mask2, response = False):
     """
     Currently the control system runs at 400Hz and because it's pretty
     unlikely you will want to see data at that rate, N allows you to
@@ -552,7 +607,7 @@ class Sphero(threading.Thread):
     #print data
     self.send(data, response)
 
-  def set_filtered_data_strm(self, sample_div, sample_frames, pcnt, response):
+  def set_filtered_data_strm(self, sample_div, sample_frames, pcnt, response = False):
     """
     Helper function to add all the filtered data to the data strm
     mask, so that the user doesn't have to set the data strm manually.
@@ -571,7 +626,7 @@ class Sphero(threading.Thread):
         mask2 = mask2|value
     self.set_data_strm(sample_div, sample_frames, mask1, pcnt, mask2, response)
 
-  def set_raw_data_strm(self, sample_div, sample_frames, pcnt, response):
+  def set_raw_data_strm(self, sample_div, sample_frames, pcnt, response = False):
     """
     Helper function to add all the raw data to the data strm mask, so
     that the user doesn't have to set the data strm manually.
@@ -591,7 +646,7 @@ class Sphero(threading.Thread):
     self.set_data_strm(sample_div, sample_frames, mask1, pcnt, mask2, response)
 
 
-  def set_all_data_strm(self, sample_div, sample_frames, pcnt, response):
+  def set_all_data_strm(self, sample_div, sample_frames, pcnt, response = False):
     """
     Helper function to add all the data to the data strm mask, so
     that the user doesn't have to set the data strm manually.
@@ -609,7 +664,7 @@ class Sphero(threading.Thread):
         mask2 = mask2|value
     self.set_data_strm(sample_div, sample_frames, mask1, pcnt, mask2, response)
 
-  def config_collision_detect(self, method, Xt, Xspd, Yt, Yspd, ignore_time, response):
+  def config_collision_detect(self, method, Xt, Xspd, Yt, Yspd, ignore_time, response = False):
     """
     This command either enables or disables asynchronous message
     generation when a collision is detected.The Ignore Time parameter
@@ -631,7 +686,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_CFG_COL_DET'],[method, Xt, Xspd, Yt, Yspd, ignore_time]), response)
 
-  def set_rgb_led(self, red, green, blue, save, response):
+  def set_rgb_led(self, red, green, blue, save = 0, response = False):
     """
     This allows you to set the RGB LED color. The composite value is
     stored as the "application LED color" and immediately driven to
@@ -647,7 +702,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_SET_RGB_LED'],[self.clamp(red,0,255), self.clamp(green,0,255), self.clamp(blue,0,255), save]), response)
 
-  def set_back_led(self, brightness, response):
+  def set_back_led(self, brightness, response = False):
     """
     This allows you to control the brightness of the back LED. The
     value does not persist across power cycles.
@@ -657,7 +712,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_SET_BACK_LED'],[self.clamp(brightness,0,255)]), response)
 
-  def get_rgb_led(self, response):
+  def get_rgb_led(self, response = True):
     """
     This retrieves the "user LED color" which is stored in the config
     block (which may or may not be actively driven to the RGB LED).
@@ -666,7 +721,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_GET_RGB_LED'],[]), response)
 
-  def roll(self, speed, heading, state, response):
+  def roll(self, speed, heading, state, response = False):
     """
     This commands Sphero to roll along the provided vector. Both a
     speed and a heading are required; the latter is considered
@@ -683,7 +738,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_ROLL'],[self.clamp(speed,0,255), (heading>>8), (heading & 0xff), state]), response)
 
-  def boost(self, time, heading, response):
+  def boost(self, time, heading, response = False):
     """
     This commands Sphero to meet the provided heading, disable
     stabilization and ramp the motors up to full-speed for a period of
@@ -697,7 +752,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_BOOST'], [time, (heading>>8), (heading & 0xff)]), response)
 
-  def set_raw_motor_values(self, l_mode, l_power, r_mode, r_power, response):
+  def set_raw_motor_values(self, l_mode, l_power, r_mode, r_power, response = False):
     """
     This allows you to take over one or both of the motor output
     values, instead of having the stabilization system control
@@ -712,7 +767,7 @@ class Sphero(threading.Thread):
     """
     self.send(self.pack_cmd(REQ['CMD_RAW_MOTORS'], [l_mode, l_power, r_mode, r_power]), response)
 
-  def send(self, data, response):
+  def send(self, data, response = False):
     """
     Packets are sent from Client -> Sphero in the following byte format::
 
@@ -721,19 +776,18 @@ class Sphero(threading.Thread):
       -------------------------------------------------------
 
     * SOP1 - start packet 1 - Always 0xff. 
-    * SOP2 - start packet 2 - Set to 0xff when an acknowledgement is\
+    * SOP2 - start packet 2 - Set to 0xff when an acknowledgement is
       expected, 0xfe otherwise.    
     * DID - Device ID
     * CID - Command ID
-    * SEQ - Sequence Number - This client field is echoed in the\
-      response for all synchronous commands (and ignored by Sphero\
+    * SEQ - Sequence Number - This client field is echoed in the
+      response for all synchronous commands (and ignored by Sphero
       when SOP2 = 0xfe)
     * DLEN - Data
     * Length - Number of bytes through the end of the packet.
     * <data>
-    * CHK - Checksum - The modulo 256 sum of all the bytes from the\
-      DID through the end of the data payload, bit inverted (1's\
-      complement).
+    * CHK - Checksum - The modulo 256 sum of all the bytes from the
+      DID through the end of the data payload, bit inverted (1's complement).
     """
     #compute the checksum
     #modulo 256 sum of data bit inverted
@@ -802,18 +856,18 @@ class Sphero(threading.Thread):
       with self._communication_lock:
         self.raw_data_buf += self.bt.recv(num_bytes)
       data = self.raw_data_buf
+      
       while len(data)>5:
         if data[:2] == RECV['SYNC']:
-          #print "got response packet"
+          # print "got response packet"
           # response packet
           data_length = ord(data[4])
           if data_length+5 <= len(data):
             data_packet = data[:(5+data_length)]
             data = data[(5+data_length):]
+            print "Response packet", self.data2hexstr(data_packet)
           else:
             break
-            #print "Response packet", self.data2hexstr(data_packet)
-         
         elif data[:2] == RECV['ASYNC']:
           data_length = (ord(data[3])<<8)+ord(data[4])
           if data_length+5 <= len(data):
@@ -831,7 +885,19 @@ class Sphero(threading.Thread):
           else:
             print "got a packet that isn't streaming"
         else:
-          raise RuntimeError("Bad SOF : " + self.data2hexstr(data))
+          # try to skip bad data until I get either [0xff, 0xff] or [0xff, 0xfe]
+          start_packet = -1
+          for i in range(len(data)):
+            if data[i] == '\xff' and (i+1) < len(data) and (data[i+1] == '\xff' or data[i+1] == '\xfe'):
+              start_packet = i
+              break
+              
+          if start_packet >= 0:
+            data = data[start_packet:]
+          else:
+            break
+            #raise RuntimeError("Bad SOF : " + self.data2hexstr(data))
+      
       self.raw_data_buf=data
 
   def parse_pwr_notify(self, data, data_length):
@@ -890,11 +956,226 @@ class Sphero(threading.Thread):
     #print output
     return output
 
-
-
   def disconnect(self):
     self.is_connected = False
     self.bt.close()
     return self.is_connected
+  
+  def configure_locator(self, x, y, yaw_tare, auto_correct_yaw = True, response = False):
+    '''
+    Through the streaming interface, Sphero provides real-time location data in the form of (X,Y) coordinates on the ground plane.
+    When Sphero wakes up it has coordinates (0,0) and heading 0, which corresponds to facing down the positive Y-axis with the positive X-axis to your right.
+    This command allows you to move Sphero to a new location and change the alignment of locator coordinates with IMU headings.
+    When Sphero receives a Set Heading command it changes which direction corresponds to heading 0.
+    By default, the locator compensates for this by modifying its value for yaw tare so that the Y-axis is still pointing in the same real-world direction.
+    For instance, if you wake up Sphero and drive straight, you will be driving down the Y-axis.
+    If you use the Set Heading feature in the drive app to turn 90 degrees, you will still have heading 0, but the locator knows you have turned 90 degrees and are now facing down the X-axis.
+    This feature can be turned off, in which case the locator knows nothing about the Set Heading command.
+    This can lead to some strange results. For instance, if you drive using only roll commands with heading 0 and set heading commands to change direction the locator will perceive your entire path as lying on the Y-axis.
+    
+    :param X, Y: The current (X,Y) coordinates of Sphero on the ground plane in centimeters.
+    :param Yaw Tare: Controls how the X,Y-plane is aligned with Sphero's heading coordinate system. When this parameter is set to zero, it means that having yaw = 0 corresponds to facing down the Y- axis in the positive direction. The value will be interpreted in the range 0-359 inclusive
+    :param Auto Correct Yaw: Determines whether calibrate commands automatically correct the yaw tare value. When false, the positive Y axis coincides with heading 0 (assuming you do not change the yaw tare manually using this API command).
+    :param Response: request response back from Sphero
+    '''
+    yaw_tare = self.clamp(yaw_tare, 0, 359)
+    self.send(self.pack_cmd(REQ['CMD_CFG_LOCATOR'], [0x01 if auto_correct_yaw else 0x00, x>>8 & 0xff, x & 0xff, y>>8 & 0xff, y & 0xff, yaw_tare>>8 & 0xff, yaw_tare & 0xff]), response)
 
+  def save_macro(self, macro_builder, response = False):
+    self.send(self.pack_cmd(REQ['CMD_SAVE_MACRO'] if macro_builder.get_id() != 255 else REQ['CMD_SAVE_TEMP_MACRO'], macro_builder.create_macro()), response)
+    
+  def run_macro(self, macro_id = 255, response = False):
+    self.send(self.pack_cmd(REQ['CMD_RUN_MACRO'], [macro_id]), response)
+    
+  def abort_macro(self, response = False):
+    self.send(self.pack_cmd(REQ['CMD_ABORT_MACRO'], []), response) 
+    
+  def set_permanent_opt_flags(self, flags, response = False):
+    self.send(self.pack_cmd(REQ['CMD_SET_PERM_OPT_FLAGS'], [flags>>24 & 0xff, flags>>16 & 0xff, flags>>8 & 0xff, flags & 0xff]), response)
+    
+  def get_permanent_opt_flags(self, response = True):
+    self.send(self.pack_cmd(REQ['CMD_GET_PERM_OPT_FLAGS'], []), response)
+    
+  def set_temporary_opt_flags(self, flags, response = False):
+    self.send(self.pack_cmd(REQ['CMD_SET_TMP_OPT_FLAGS'], [flags>>24 & 0xff, flags>>16 & 0xff, flags>>8 & 0xff, flags & 0xff]), response)
+    
+  def get_temporary_opt_flags(self, response = True):
+    self.send(self.pack_cmd(REQ['CMD_GET_TMP_OPT_FLAGS'], []), response)
+    
+class MacroBuilder:
+  def __init__(self, macro_id = 255, flags = 0, ext_flags = 0):
+    self.macro_id = macro_id
+    self.flags = flags
+    self.ext_flags = ext_flags
+    self.commands = []
+  
+  def clamp(self, n, minn, maxn):
+    return max(min(maxn, n), minn)
+  
+  def reset(self):
+    self.commands = []
+  
+  def get_commands(self):
+    return self.commands
+  
+  def get_id(self):
+    return self.macro_id
+  
+  def create_macro(self):
+    macro = [self.macro_id]
+    if self.ext_flags != 0:
+      self.flags |= 0x80
+      macro += [self.flags, self.ext_flags]
+    else:
+      macro += [self.flags]
+      
+    map(macro.extend, self.commands)
+    
+    macro.append(0)
+    if len(macro) > 254:
+      raise RuntimeError("Macro too long")
+    
+    return macro
+  
+  def set_stabilization(self, enabled, post_cmd_delay):
+    self.commands.append([MACRO_CMD['SET_STABILIZATION'], 1 if enabled else 0, self.clamp(post_cmd_delay, 0, 255)])
+    return self
+  
+  def set_heading(self, heading, post_cmd_delay):
+    heading = self.clamp(heading, 0, 359)
+    self.commands.append([MACRO_CMD['SET_HEADING'], heading>>8 & 0xff, heading & 0xff, self.clamp(post_cmd_delay, 0, 255)])
+    return self
+  
+  def set_rotation_rate(self, rate):
+    self.commands.append([MACRO_CMD['SET_ROTATION_RATE'], self.clamp(rate, 0, 255)])
+    return self
+  
+  def delay(self, time):
+    self.commands.append([MACRO_CMD['DELAY'], time>>8 & 0xff, time & 0xff])
+    return self
+  
+  def _set_sd(self, cmd, delay):
+    self.commands.append([cmd, delay>>8 & 0xff, delay & 0xff])
+    return self
+  
+  def set_sd1(self, delay):
+    return self._set_sd(MACRO_CMD['SET_SD1'], delay)
+  
+  def set_sd2(self, delay):
+    return self._set_sd(MACRO_CMD['SET_SD2'], delay)
+  
+  def _set_spd(self, cmd, speed):
+    self.commands.append([cmd, speed>>8 & 0xff, speed & 0xff])
+    return self
+  
+  def set_spd1(self, speed):
+    return self._set_spd(MACRO_CMD['SET_SPD1'], speed)
 
+  def set_spd2(self, speed):
+    return self._set_spd(MACRO_CMD['SET_SPD2'], speed)
+  
+  def roll(self, speed, heading, post_cmd_delay):
+    heading = self.clamp(heading, 0, 359)
+    cmd = MACRO_CMD['ROLL'] if post_cmd_delay <= 255 else MACRO_CMD['ROLL2']
+    delay = [self.clamp(post_cmd_delay, 0, 255)] if post_cmd_delay <= 255 else [post_cmd_delay>>8 & 0xff, post_cmd_delay & 0xff]
+    self.commands.append([cmd, self.clamp(speed, 0, 255), heading>>8 & 0xff, heading & 0xff] + delay)
+    return self
+  
+  def set_speed(self, speed, post_cmd_delay):
+    self.commands.append([MACRO_CMD['SET_SPEED'], self.clamp(speed, 0, 255), self.clamp(post_cmd_delay, 0, 255)])
+    return self
+  
+  def roll_with_sd1(self, speed, heading):
+    heading = self.clamp(heading, 0, 359)
+    self.commands.append([MACRO_CMD['ROLL_WITH_SD1'], heading>>8 & 0xff, heading & 0xff, self.clamp(speed, 0, 255)])
+    return self
+  
+  def _roll_at_spd_with_sd1(self, cmd, heading):
+    heading = self.clamp(heading, 0, 359)
+    self.commands.append([cmd, heading>>8 & 0xff, heading & 0xff])
+    return self
+  
+  def roll_at_spd1_with_sd1(self, heading):
+    return self._roll_at_spd_with_sd1(MACRO_CMD['ROLL_AT_SPD1_WITH_SD1'], heading)
+  
+  def roll_at_spd2_with_sd1(self, heading):
+    return self._roll_at_spd_with_sd1(MACRO_CMD['ROLL_AT_SPD2_WITH_SD1'], heading)
+  
+  def set_raw_motor_values(self, l_mode, l_power, r_mode, r_power, post_cmd_delay):
+    self.commands.append([MACRO_CMD['SET_RAW_MOTOR_VALUES'], self.clamp(l_mode, 0, 4), self.clamp(l_power, 0, 255), self.clamp(r_mode, 0, 4), self.clamp(r_power, 0, 255), self.clamp(post_cmd_delay, 0, 255)])
+    return self
+  
+  def rotate_over_time(self, angle, time):
+    self.commands.append([MACRO_CMD['ROTATE_OVER_TIME'], angle>>8 & 0xff, angle & 0xff, time>>8 & 0xff, time & 0xff])
+    return self
+  
+  def _rotate_over_sd(self, cmd, angle):
+    self.commands.append([cmd, angle>>8 & 0xff, angle & 0xff])
+    return self
+    
+  def rotate_over_sd1(self, angle):
+    return self._rotate_over_sd(MACRO_CMD['ROTATE_OVER_SD1'], angle)
+  
+  def rotate_over_sd2(self, angle):
+    return self._rotate_over_sd(MACRO_CMD['ROTATE_OVER_SD2'], angle)
+
+  def wait_until_stopped(self, time):
+    self.commands.append([MACRO_CMD['WAIT_UNTIL_STOPPED'], time>>8 & 0xff, time & 0xff])
+    return self
+  
+  def loop_start(self, count):
+    self.commands.append([MACRO_CMD['LOOP_START'], self.clamp(count, 0, 255)])
+    return self
+  
+  def loop_start_system(self):
+    self.commands.append([MACRO_CMD['LOOP_START_SYSTEM']])
+    return self
+  
+  def loop_end(self):
+    self.commands.append([MACRO_CMD['LOOP_END']])
+    return self
+  
+  def comment(self, msg):
+    size = len(msg)
+    self.commands.append([MACRO_CMD['COMMENT'], size>>8 & 0xff, size & 0xff] + list(msg))
+    return self
+  
+  def set_rgb_led(self, red, green, blue, post_cmd_delay):
+    self.commands.append([MACRO_CMD['SET_RGB_LED'], self.clamp(red, 0, 255), self.clamp(green, 0, 255), self.clamp(blue, 0, 255), self.clamp(post_cmd_delay, 0, 255)])
+    return self
+  
+  def set_rgb_led_with_sd2(self, red, green, blue):
+    self.commands.append([MACRO_CMD['SET_RGB_LED_WITH_SD2'], self.clamp(red, 0, 255), self.clamp(green, 0, 255), self.clamp(blue, 0, 255)])
+    return self
+  
+  def fade_to_rgb(self, red, green, blue, time):
+    self.commands.append([MACRO_CMD['FADE_TO_RGB'], self.clamp(red, 0, 255), self.clamp(green, 0, 255), self.clamp(blue, 0, 255), time>>8 & 0xff, time & 0xff])
+    return self
+  
+  def set_back_led(self, value, post_cmd_delay):
+    self.commands.append([MACRO_CMD['SET_BACK_LED'], self.clamp(value, 0, 255), self.clamp(post_cmd_delay, 0, 255)])
+    return self
+  
+  def goto(self, target):
+    self.commands.append([MACRO_CMD['GOTO'], self.clamp(target, 1, 255)])
+    return self
+  
+  def gosub(self, target):
+    self.commands.append([MACRO_CMD['GOSUB'], self.clamp(target, 1, 255)])
+    return self
+  
+  def branch_on_collision(self, target):
+    self.commands.append([MACRO_CMD['BRANCH_ON_COLLISION'], self.clamp(target, 1, 255)])
+    return self
+  
+  def configure_collision_detection(self, method, x_thresh, x_speed, y_thresh, y_speed, dead_time):
+    self.commands.append([MACRO_CMD['CFG_COLLISION_DETECTION'], self.clamp(method, 0, 3), self.clamp(x_thresh, 0, 255), self.clamp(x_speed, 0, 255), self.clamp(y_thresh, 0, 255), self.clamp(y_speed, 0, 255), self.clamp(dead_time, 0, 255)])
+    return self
+  
+  def go_to_sleep(self, time):
+    self.commands.append([MACRO_CMD['GO_TO_SLEEP'], time>>8 & 0xff, time & 0xff])
+    return self
+  
+  def emit_marker(self, marker):
+    self.commands.append([MACRO_CMD['EMIT_MARKER'], self.clamp(marker, 0, 255)])
+    return self
