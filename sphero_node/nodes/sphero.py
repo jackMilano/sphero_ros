@@ -280,10 +280,10 @@ class SpheroNode(object):
     if self.is_connected:
       now = rospy.Time.now()
 
-      quat = [ data["QUATERNION_Q0"] / 10000.0,
-               data["QUATERNION_Q1"] / 10000.0,
-               data["QUATERNION_Q2"] / 10000.0,
-               data["QUATERNION_Q3"] / 10000.0 ]
+      quat = [ data["QUATERNION_Q1"] / 10000.0, #x
+               data["QUATERNION_Q2"] / 10000.0, #y
+               data["QUATERNION_Q3"] / 10000.0, #z
+               data["QUATERNION_Q0"] / 10000.0 ]#w
 
       imu = Imu(header=rospy.Header(frame_id="imu_link"))
       imu.header.stamp = now
@@ -309,7 +309,7 @@ class SpheroNode(object):
       odom.header.stamp = now
       odom.pose.pose = Pose(Point(pos[0], pos[1], pos[2]), Quaternion(0.0, 0.0, 0.0, 1.0))
       odom.twist.twist = Twist(Vector3(data["VELOCITY_X"] / 1000.0, data["VELOCITY_Y"] / 1000.0, 0), Vector3(0, 0, imu.angular_velocity.z))
-      odom.pose.covariance = self.ODOM_POSE_COVARIANCE                
+      odom.pose.covariance = self.ODOM_POSE_COVARIANCE
       odom.twist.covariance = self.ODOM_TWIST_COVARIANCE
       self.odom_pub.publish(odom)
 
