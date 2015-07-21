@@ -1,18 +1,18 @@
 <launch>
-  <arg name="rate" value="50.0" />
-  <arg name="connect_red" value="0" />
-  <arg name="connect_green" value="0" />
-  <arg name="connect_blue" value="0" />
-  <arg name="cmd_vel_timeout" value="0.6" />
-  <arg name="diagnostics_update_rate" value="1.0" />
-  <arg name="reset_odom" value="true" />
-  <arg name="tf_prefix" value="" />
+  <arg name="rate" default="50.0" />
+  <arg name="connect_red" default="0" />
+  <arg name="connect_green" default="0" />
+  <arg name="connect_blue" default="0" />
+  <arg name="cmd_vel_timeout" default="0.6" />
+  <arg name="diagnostics_update_rate" default="1.0" />
+  <arg name="reset_odom" default="true" />
+<!--  <arg name="tf_prefix" default="" />
 
   <param name="robot_description" textfile='$(find sphero_description)/urdf/sphero.urdf' />
   <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" output="screen">
     <param name="publish_frequency" type="double" value="50.0" />
     <param name="tf_prefix" value="$(arg tf_prefix)" />
-  </node>
+  </node> 
   <node pkg="robot_pose_ekf" type="robot_pose_ekf" name="robot_pose_ekf">
     <param name="output_frame" value="odom"/>
     <param name="freq" value="50.0"/>
@@ -21,7 +21,7 @@
     <param name="imu_used" value="true"/>
     <param name="vo_used" value="false"/>
     <param name="self_diagnose" value="false"/>
-  </node>
+  </node> -->
   <node pkg="sphero_node" type="sphero.py" name="sphero_node" output="screen">
     <param name="rate" value="$(arg rate)"/>
     <param name="connect_red" value="$(arg connect_red)"/>

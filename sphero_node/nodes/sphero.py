@@ -41,6 +41,7 @@ import PyKDL
 from sphero_driver import sphero_driver
 # import dynamic_reconfigure.server
 
+from visualization_msgs.msg import Marker
 from sensor_msgs.msg import Imu
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Point, Pose, Quaternion, Twist, TwistWithCovariance, Vector3, Pose2D
@@ -97,14 +98,15 @@ class SpheroNode(object):
     self.imu_pub = rospy.Publisher('imu_data', Imu, queue_size=1)
     self.collision_pub = rospy.Publisher('collision', SpheroCollision, queue_size=1)
     self.diag_pub = rospy.Publisher('diagnostics', DiagnosticArray, queue_size=1)
+    self.visualization_pub = rospy.Publisher('visualization_marker', Marker, queue_size=1)
     self.cmd_vel_sub = rospy.Subscriber('cmd_vel', Twist, self.cmd_vel, queue_size=1)
     self.color_sub = rospy.Subscriber('set_color', ColorRGBA, self.set_color, queue_size=1)
     self.back_led_sub = rospy.Subscriber('set_back_led', Float32, self.set_back_led, queue_size=1)
     self.stabilization_sub = rospy.Subscriber('disable_stabilization', Bool, self.set_stabilization, queue_size=1)
-    self.heading_abs_sub = rospy.Subscriber('set_heading', Float32, self.set_heading, queue_size=1)
-    self.heading_rad_sub = rospy.Subscriber('heading', Float32, self.heading_radians, queue_size=1)
-    self.heading_deg_sub = rospy.Subscriber('heading_degrees', Float32, self.heading_degrees, queue_size=1)
-    self.speed_sub = rospy.Subscriber('speed', Float32, self.speed, queue_size=1)
+    self.heading_abs_sub = rospy.Subscriber('configure_heading', Float32, self.set_heading, queue_size=1)
+    self.heading_rad_sub = rospy.Subscriber('set_heading', Float32, self.heading_radians, queue_size=1)
+    self.heading_deg_sub = rospy.Subscriber('set_heading_degrees', Float32, self.heading_degrees, queue_size=1)
+    self.speed_sub = rospy.Subscriber('set_speed', Float32, self.speed, queue_size=1)
     self.cfg_locator_sub = rospy.Subscriber('configure_locator', Pose2D, self.configure_locator, queue_size=1)
 #     self.current_speed_pub = rospy.Publisher('current_speed', Float32, queue_size=1)
 #     self.reconfigure_srv = dynamic_reconfigure.server.Server(ReconfigConfig, self.reconfigure)
@@ -140,9 +142,10 @@ class SpheroNode(object):
       rospy.logerr("Failed to connect to Sphero.")
       sys.exit(1)
       
-    # reset locator if necessary
+    # reset locator and set heading so that 0deg = positive x axis (to follow ROS conventions)
     if self.reset_odom:
       self.robot.configure_locator(0, 0, 0)
+    #self.robot.set_heading(90)
     
     # setup streaming    
     self.robot.set_filtered_data_strm(self.sampling_divisor, 1 , 0, True)
@@ -256,6 +259,7 @@ class SpheroNode(object):
   def parse_collision(self, data):
     if self.is_connected:
       now = rospy.Time.now()
+      #rotate by 90deg to follow ROS conventions?
       collision = SpheroCollision()
       collision.header.stamp = now
       collision.x = data["X"]
@@ -279,12 +283,12 @@ class SpheroNode(object):
   def parse_data_strm(self, data):
     if self.is_connected:
       now = rospy.Time.now()
-
-      quat = [ data["QUATERNION_Q1"] / 10000.0, #x
+      #rotate by 90deg to follow ROS conventions (x = forward)??
+      quat = ( data["QUATERNION_Q1"] / 10000.0, #x
                data["QUATERNION_Q2"] / 10000.0, #y
                data["QUATERNION_Q3"] / 10000.0, #z
-               data["QUATERNION_Q0"] / 10000.0 ]#w
-
+               data["QUATERNION_Q0"] / 10000.0 )#w
+      
       imu = Imu(header=rospy.Header(frame_id="imu_link"))
       imu.header.stamp = now
       imu.orientation.x = quat[0]
@@ -301,28 +305,61 @@ class SpheroNode(object):
       self.imu = imu
       self.imu_pub.publish(self.imu)
 
-      pos = [ data["ODOM_X"] / 100.0,
+      pos = ( data["ODOM_X"] / 100.0,
               data["ODOM_Y"] / 100.0,
-              0.0 ]
+              0.0 )
+
+      euler = tf.transformations.euler_from_quaternion(quat)
+      euler = (euler[0], euler[1], -euler[2] + math.pi/2)
 
       odom = Odometry(header=rospy.Header(frame_id="odom"), child_frame_id='base_footprint')
       odom.header.stamp = now
-      odom.pose.pose = Pose(Point(pos[0], pos[1], pos[2]), Quaternion(0.0, 0.0, 0.0, 1.0))
+      # publish yaw in pose
+      odom.pose.pose.position.x = pos[0]
+      odom.pose.pose.position.y = pos[1]
+      odom.pose.pose.position.z = pos[2]
+      quat_yaw = tf.transformations.quaternion_from_euler(0, 0, euler[2])
+      odom.pose.pose.orientation.x = quat_yaw[0]
+      odom.pose.pose.orientation.y = quat_yaw[1]
+      odom.pose.pose.orientation.z = quat_yaw[2]
+      odom.pose.pose.orientation.w = quat_yaw[3]
       odom.twist.twist = Twist(Vector3(data["VELOCITY_X"] / 1000.0, data["VELOCITY_Y"] / 1000.0, 0), Vector3(0, 0, imu.angular_velocity.z))
       odom.pose.covariance = self.ODOM_POSE_COVARIANCE
       odom.twist.covariance = self.ODOM_TWIST_COVARIANCE
       self.odom_pub.publish(odom)
 
+      marker = Marker(header=rospy.Header(frame_id="base_link"))
+      marker.ns = "basic_shapes"
+      marker.id = 0
+      marker.type = Marker.ARROW
+      marker.action = Marker.ADD
+      marker.pose.orientation.x = quat_yaw[0]
+      marker.pose.orientation.y = quat_yaw[1]
+      marker.pose.orientation.z = quat_yaw[2]
+      marker.pose.orientation.w = quat_yaw[3]
+      marker.scale = Vector3(0.5, 0.01, 0.01)
+      marker.color = ColorRGBA(1.0, 0.0, 0.0, 1.0)
+      marker.lifetime = rospy.Duration()
+      
+      self.visualization_pub.publish(marker)
+
       # need to publish this trasform to show the roll, pitch, and yaw properly
-      self.transform_broadcaster.sendTransform((0.0, 0.0, 0.0381), quat, odom.header.stamp, "base_link", "base_footprint")
-      self.transform_broadcaster.sendTransform(pos, (0.0, 0.0, 0.0, 1.0), odom.header.stamp, "base_footprint", "odom")
+      # yaw of the reference frame does not change
+      self.transform_broadcaster.sendTransform((0, 0, 0.0381), (0, 0, 0, 1), now, "base_link", "base_footprint")
+      self.transform_broadcaster.sendTransform((0, 0, 0, 0), (0, 0, 0, 1), now, "imu_link", "base_link")
+      #here I should publish from transform odom->base_link
+      #base_footprint is the projection of base link on the floor, so it should have same yaw, whereas roll and pitch should be 0 wrt odom frame
+      self.transform_broadcaster.sendTransform(pos, (0, 0, 0, 1), now, "base_footprint", "odom")
 #       self.current_speed = math.sqrt(math.pow(odom.twist.twist.linear.x, 2) + math.pow(odom.twist.twist.linear.y, 2))
 
   def cmd_vel(self, msg):
     if self.is_connected:
       self.last_cmd_vel_time = rospy.Time.now()
-      self.cmd_heading = int(self.normalize_angle_positive(math.atan2(msg.linear.x, msg.linear.y)) * 180 / math.pi)
       self.target_speed = math.sqrt(math.pow(msg.linear.x, 2) + math.pow(msg.linear.y, 2))
+      if self.target_speed > 0.01:
+        self.cmd_heading = int(self.normalize_angle_positive(math.atan2(msg.linear.x, msg.linear.y)) * 180.0 / math.pi)
+      #self.cmd_heading = int(self.normalize_angle_positive(-math.atan2(msg.linear.y, msg.linear.x)) * 180.0 / math.pi)
+      
       #self.robot.roll(int(self.cmd_speed), int(self.cmd_heading), 1, False)
       
   def heading_degrees(self, msg):
@@ -333,7 +370,12 @@ class SpheroNode(object):
       
   def heading(self, rad):
     if self.is_connected:
-      self.cmd_heading = int(self.normalize_angle_positive(rad) * 180 / math.pi)
+	  #for sphero heading 0 is along positive y axis, but we want to follow ROS convention and have it along positive x
+	  #also, sphero increases heading clockwise and ROS conventions counter-clockwise
+	  # angle_sphero = -angle_ros + 90deg
+      #self.cmd_heading = int(self.normalize_angle_positive(-rad + 1.570796) * 180.0 / math.pi)
+      #maybe needs to be negated
+      self.cmd_heading = int(self.normalize_angle_positive(-rad) * 180.0 / math.pi)
       #self.robot.roll(self.cmd_speed, int(self.cmd_heading), 1, False)
       
   def speed(self, msg):
@@ -359,8 +401,10 @@ class SpheroNode(object):
 
   def set_heading(self, msg):
     if self.is_connected:
-      heading_deg = int(self.normalize_angle_positive(msg.data) * 180.0 / math.pi)
-      self.robot.set_heading(heading_deg, False)
+		#see heading()
+      #self.robot.set_heading(int(self.normalize_angle_positive(-msg.data + 1.570796) * 180.0 / math.pi), False)
+    #TODO maybe needs to be negated
+      self.robot.set_heading(int(self.normalize_angle_positive(-msg.data)), False)
 
   def configure_collision_detect(self, msg):
     pass
