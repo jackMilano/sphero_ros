@@ -311,6 +311,8 @@ class SpheroNode(object):
 
       euler = tf.transformations.euler_from_quaternion(quat)
       euler = (euler[0], euler[1], -euler[2] + math.pi/2)
+      quat_yaw = tf.transformations.quaternion_from_euler(0, 0, euler[2])
+      
 
       odom = Odometry(header=rospy.Header(frame_id="odom"), child_frame_id='base_footprint')
       odom.header.stamp = now
@@ -318,7 +320,6 @@ class SpheroNode(object):
       odom.pose.pose.position.x = pos[0]
       odom.pose.pose.position.y = pos[1]
       odom.pose.pose.position.z = pos[2]
-      quat_yaw = tf.transformations.quaternion_from_euler(0, 0, euler[2])
       odom.pose.pose.orientation.x = quat_yaw[0]
       odom.pose.pose.orientation.y = quat_yaw[1]
       odom.pose.pose.orientation.z = quat_yaw[2]
