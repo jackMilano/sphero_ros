@@ -103,7 +103,8 @@ class SpheroNode(object):
     self.color_sub = rospy.Subscriber('set_color', ColorRGBA, self.set_color, queue_size=1)
     self.back_led_sub = rospy.Subscriber('set_back_led', Float32, self.set_back_led, queue_size=1)
     self.stabilization_sub = rospy.Subscriber('disable_stabilization', Bool, self.set_stabilization, queue_size=1)
-    self.heading_abs_sub = rospy.Subscriber('configure_heading', Float32, self.set_heading, queue_size=1)
+    self.heading_abs_rad_sub = rospy.Subscriber('configure_heading', Float32, self.set_heading, queue_size=1)
+    self.heading_abs_deg_sub = rospy.Subscriber('configure_heading_degrees', Float32, self.set_heading_degrees, queue_size=1)
     self.heading_rad_sub = rospy.Subscriber('set_heading', Float32, self.heading_radians, queue_size=1)
     self.heading_deg_sub = rospy.Subscriber('set_heading_degrees', Float32, self.heading_degrees, queue_size=1)
     self.speed_sub = rospy.Subscriber('set_speed', Float32, self.speed, queue_size=1)
@@ -346,11 +347,11 @@ class SpheroNode(object):
 
       # need to publish this trasform to show the roll, pitch, and yaw properly
       # yaw of the reference frame does not change
-      self.transform_broadcaster.sendTransform((0, 0, 0.0381), (0, 0, 0, 1), now, "base_link", "base_footprint")
+      self.transform_broadcaster.sendTransform((0, 0, -0.0381), (0, 0, 0, 1), now, "base_footprint", "base_link")
       self.transform_broadcaster.sendTransform((0, 0, 0, 0), (0, 0, 0, 1), now, "imu_link", "base_link")
       #here I should publish from transform odom->base_link
       #base_footprint is the projection of base link on the floor, so it should have same yaw, whereas roll and pitch should be 0 wrt odom frame
-      self.transform_broadcaster.sendTransform(pos, (0, 0, 0, 1), now, "base_footprint", "odom")
+      self.transform_broadcaster.sendTransform((pos[0], pos[1], pos[2] + 0.0381), (0, 0, 0, 1), now, "base_link", "odom")
 #       self.current_speed = math.sqrt(math.pow(odom.twist.twist.linear.x, 2) + math.pow(odom.twist.twist.linear.y, 2))
 
   def cmd_vel(self, msg):
@@ -400,12 +401,16 @@ class SpheroNode(object):
       else:
         self.robot.set_stabilization(0, False)
 
-  def set_heading(self, msg):
+  def set_heading_degrees(self, msg):
     if self.is_connected:
 		#see heading()
       #self.robot.set_heading(int(self.normalize_angle_positive(-msg.data + 1.570796) * 180.0 / math.pi), False)
     #TODO maybe needs to be negated
       self.robot.set_heading(int(self.normalize_angle_positive(-msg.data)), False)
+
+  def set_heading(self, msg):
+    if self.is_connected: 
+      self.robot.set_heading(int(self.normalize_angle_positive(-msg.data) * 180.0 / math.pi), False)
 
   def configure_collision_detect(self, msg):
     pass
