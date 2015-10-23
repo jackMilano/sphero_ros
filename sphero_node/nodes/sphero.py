@@ -33,23 +33,23 @@
 
 import rospy
 
+import PyKDL
 import math
 import sys
 import tf
-import PyKDL
 
 from sphero_driver import sphero_driver
 # import dynamic_reconfigure.server
 
-from visualization_msgs.msg import Marker
-from sensor_msgs.msg import Imu
-from nav_msgs.msg import Odometry
+# from sphero_node.cfg import ReconfigConfig
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import Point, Pose, Quaternion, Twist, TwistWithCovariance, Vector3, Pose2D
+from hgext.gpg import sign
+from nav_msgs.msg import Odometry
+from sensor_msgs.msg import Imu
 from sphero_node.msg import SpheroCollision
 from std_msgs.msg import ColorRGBA, Float32, Bool
-from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
-# from sphero_node.cfg import ReconfigConfig
-from hgext.gpg import sign
+from visualization_msgs.msg import Marker
 
 
 class SpheroNode(object):
@@ -58,25 +58,55 @@ class SpheroNode(object):
                     3:"Battery Low",
                     4:"Battery Critical"}
 
+  ## Rispetto all'originale ho cambiato
 
-  ODOM_POSE_COVARIANCE = [1e-3, 0, 0, 0, 0, 0,
-                          0, 1e-3, 0, 0, 0, 0,
-                          0, 0, 1e6, 0, 0, 0,
-                          0, 0, 0, 1e6, 0, 0,
-                          0, 0, 0, 0, 1e6, 0,
-                          0, 0, 0, 0, 0, 1e3]
+  #ODOM_POSE_COVARIANCE = [1e-3, 0, 0, 0, 0, 0,
+                          #0, 1e-3, 0, 0, 0, 0,
+                          #0, 0, 1e6, 0, 0, 0,
+                          #0, 0, 0, 1e6, 0, 0,
+                          #0, 0, 0, 0, 1e6, 0,
+                          #0, 0, 0, 0, 0, 1e3]
 
 
-  ODOM_TWIST_COVARIANCE = [1e-3, 0, 0, 0, 0, 0,
-                           0, 1e-3, 0, 0, 0, 0,
-                           0, 0, 1e6, 0, 0, 0,
-                           0, 0, 0, 1e6, 0, 0,
-                           0, 0, 0, 0, 1e6, 0,
-                           0, 0, 0, 0, 0, 1e3]
+  #ODOM_TWIST_COVARIANCE = [1e-3, 0, 0, 0, 0, 0,
+                           #0, 1e-3, 0, 0, 0, 0,
+                           #0, 0, 1e6, 0, 0, 0,
+                           #0, 0, 0, 1e6, 0, 0,
+                           #0, 0, 0, 0, 1e6, 0,
+                           #0, 0, 0, 0, 0, 1e3]
+
+  ODOM_POSE_COVARIANCE = [1e-4, 0, 0, 0, 0, 0,
+                          0, 1e-4, 0, 0, 0, 0,
+                          0, 0, 1e-3, 0, 0, 0,
+                          0, 0, 0, 1e3, 0, 0,
+                          0, 0, 0, 0, 1e3, 0,
+                          0, 0, 0, 0, 0, 1e-4]
+
+  ODOM_TWIST_COVARIANCE = [1e-4, 0, 0, 0, 0, 0,
+                           0, 1e-4, 0, 0, 0, 0,
+                           0, 0, 1e-3, 0, 0, 0,
+                           0, 0, 0, 1e3,  0, 0,
+                           0, 0, 0, 0, 1e3,  0,
+                           0, 0, 0, 0, 0, 1e-4]
+
+  # XXX: le covarianze che vengono restituite quando Sphero e' immobile
+  ODOM_POSE_COVARIANCE_STILL = [1e-6, 0, 0, 0, 0, 0,
+                                0, 1e-6, 0, 0, 0, 0,
+                                0, 0, 1e-6, 0, 0, 0,
+                                0, 0, 0, 1e3, 0, 0,
+                                0, 0, 0, 0, 1e3, 0,
+                                0, 0, 0, 0, 0, 1e-6]
+
+  ODOM_TWIST_COVARIANCE_STILL = [1e-6, 0, 0, 0, 0, 0,
+                                0, 1e-6, 0, 0, 0, 0,
+                                0, 0, 1e-6, 0, 0, 0,
+                                0, 0, 0, 1e3,  0, 0,
+                                0, 0, 0, 0, 1e3,  0,
+                                0, 0, 0, 0, 0, 1e-6]
 
   def __init__(self):
     rospy.init_node('sphero')
-    
+
     self.is_connected = False
     self._init_pubsub()
     self._init_params()
@@ -142,13 +172,13 @@ class SpheroNode(object):
     except:
       rospy.logerr("Failed to connect to Sphero.")
       sys.exit(1)
-      
+
     # reset locator and set heading so that 0deg = positive x axis (to follow ROS conventions)
     if self.reset_odom:
       self.robot.configure_locator(0, 0, 0)
     #self.robot.set_heading(90)
-    
-    # setup streaming    
+
+    # setup streaming
     self.robot.set_filtered_data_strm(self.sampling_divisor, 1 , 0, True)
     self.robot.add_async_callback(sphero_driver.IDCODE['DATA_STRM'], self.parse_data_strm)
     # setup power notification
@@ -172,7 +202,7 @@ class SpheroNode(object):
 #     filtered_derivative = [0, 0, 0]
 #     c = 1.0
 #     loops = 0
-    
+
     while not rospy.is_shutdown():
       now = rospy.Time.now()
       # slower than 0.2 will not move
@@ -182,41 +212,41 @@ class SpheroNode(object):
         self.cmd_speed = 0
       else:
         self.cmd_speed = self.robot.clamp(int(self.target_speed), 0, 255)
-      
+
 #       if self.target_speed != 0:
 #         if self.cutoff_changed:
 #           c = 1/math.tan((self.cutoff_freq * 6.2832) * dt / 2)
 #           print "cutoff recalculated"
 #           self.cutoff_changed = False
-#         
+#
 #         #update error
 #         error[2] = error[1]
 #         error[1] = error[0]
 #         error[0] = self.target_speed - self.current_speed
-#         
+#
 #         #calculate integral and apply anti-windup
 #         integral += error[0] * dt
 #         integral = self.robot.clamp(integral, -abs(self.antiw), abs(self.antiw))
-#         
+#
 #         #filter error
 #         filtered_error[2] = filtered_error[1]
 #         filtered_error[1] = filtered_error[0]
 #         filtered_error[0] = (1/(1+c*c+1.414*c))*(error[2]+2*error[1]+error[0]-(2-1.414)*filtered_error[2])
-#         
+#
 #         #calculate derivative
 #         derivative[2] = derivative[1]
 #         derivative[1] = derivative[0]
 #         derivative[0] = (error[0] - error[1]) / dt
-#         
+#
 #         #filter derivative
 #         filtered_derivative[2] = filtered_derivative[1]
 #         filtered_derivative[1] = filtered_derivative[0]
-#         
+#
 #         if loops > 2:
 #           filtered_derivative[0] = (1/(1+c*c+1.414*c))*(derivative[2]+2*derivative[1]+derivative[0]-(2-1.414)*filtered_derivative[2])
 #         else:
 #           ++loops
-#         
+#
 #         self.cmd_speed = int(self.robot.clamp(self.kp * filtered_error[0] + self.ki * integral + self.kd * filtered_derivative[0], 0, 255))
 #       else:
 #         self.cmd_speed = 0
@@ -225,17 +255,17 @@ class SpheroNode(object):
 #         integral = 0
 #         derivative = [0, 0, 0]
 #         filtered_derivative = [0, 0, 0]
-      
+
       self.robot.roll(self.cmd_speed, self.cmd_heading, self.robot.clamp(self.cmd_speed, 0, 1))
-      
+
 #       self.current_speed_pub.publish(self.current_speed)
-      
+
       if (now - self.last_diagnostics_time) > self.diag_update_rate:
         self.last_diagnostics_time = now
         self.publish_diagnostics(now)
       r.sleep()
-                  
-  def stop(self):    
+
+  def stop(self):
     # tell the ball to stop moving before quiting
     self.robot.roll(0, self.cmd_heading, 0, False)
     self.robot.shutdown = True
@@ -246,7 +276,7 @@ class SpheroNode(object):
   def publish_diagnostics(self, time):
     diag = DiagnosticArray()
     diag.header.stamp = time
-    
+
     stat = DiagnosticStatus(name="Battery Status", level=DiagnosticStatus.OK, message=self.power_state_msg)
     if self.power_state == 3:
       stat.level = DiagnosticStatus.WARN
@@ -271,10 +301,10 @@ class SpheroNode(object):
       collision.y_magnitude = data["yMagnitude"]
       collision.speed = data["Speed"]
       collision.timestamp = data["Timestamp"]
-      
+
       self.collision = collision
       self.collision_pub.publish(self.collision)
-          
+
 
   def parse_power_notify(self, data):
     if self.is_connected:
@@ -284,12 +314,17 @@ class SpheroNode(object):
   def parse_data_strm(self, data):
     if self.is_connected:
       now = rospy.Time.now()
-      #rotate by 90deg to follow ROS conventions (x = forward)??
+
+      # I dati pubblicati da sphero sono descritti in:
+      # - 'sphero_api_1.50.pdf', pag 29-30.
+      # - oppure su github 'https://github.com/orbotix/Sphero-iOS-SDK/tree/master/samples/SensorStreaming'
+
+      # Le unita' di misura in cui sono ritornati i quaternioni sono 1/10000
       quat = ( data["QUATERNION_Q1"] / 10000.0, #x
                data["QUATERNION_Q2"] / 10000.0, #y
                data["QUATERNION_Q3"] / 10000.0, #z
                data["QUATERNION_Q0"] / 10000.0 )#w
-      
+
       imu = Imu(header=rospy.Header(frame_id="imu_link"))
       imu.header.stamp = now
       imu.orientation.x = quat[0]
@@ -299,21 +334,33 @@ class SpheroNode(object):
       imu.linear_acceleration.x = data["ACCEL_X_FILTERED"] / 4096.0 * 9.8
       imu.linear_acceleration.y = data["ACCEL_Y_FILTERED"] / 4096.0 * 9.8
       imu.linear_acceleration.z = data["ACCEL_Z_FILTERED"] / 4096.0 * 9.8
-      imu.angular_velocity.x = data["GYRO_X_FILTERED"] * 10.0 * math.pi / 180.0
-      imu.angular_velocity.y = data["GYRO_Y_FILTERED"] * 10.0 * math.pi / 180.0
-      imu.angular_velocity.z = data["GYRO_Z_FILTERED"] * 10.0 * math.pi / 180.0
+      # I dati ritornati dal giroscopio sono misurati in 0.1 degrees per second,
+      # prima di salvarli li convertiamo in radianti per second.
+      imu.angular_velocity.x = data["GYRO_X_FILTERED"] / 10.0 * (math.pi / 180.0)
+      imu.angular_velocity.y = data["GYRO_Y_FILTERED"] / 10.0 * (math.pi / 180.0)
+      imu.angular_velocity.z = data["GYRO_Z_FILTERED"] / 10.0 * (math.pi / 180.0)
 
       self.imu = imu
       self.imu_pub.publish(self.imu)
 
+      ### ODOMETRIA ###
+
+      ## Odom's Pose ##
       pos = ( data["ODOM_X"] / 100.0,
               data["ODOM_Y"] / 100.0,
               0.0 )
 
       euler = tf.transformations.euler_from_quaternion(quat)
+      # rotazione di 90 per usare sphero in maniera coerente agli standard ROS
       euler = (euler[0], euler[1], -euler[2] + math.pi/2)
       quat_yaw = tf.transformations.quaternion_from_euler(0, 0, euler[2])
-      
+
+      #XXX: quando si fa ruotare sphero
+      # - il valore dello yaw si incrementa con un movimento
+      #   antiorario, come e' giusto che sia
+      # - quando la velocita angolare si assesta, il valore oscilla
+      #   intorno a 0
+      #print "odom_yaw =", euler[2] * (180/math.pi)
 
       odom = Odometry(header=rospy.Header(frame_id="odom"), child_frame_id='base_footprint')
       odom.header.stamp = now
@@ -325,34 +372,58 @@ class SpheroNode(object):
       odom.pose.pose.orientation.y = quat_yaw[1]
       odom.pose.pose.orientation.z = quat_yaw[2]
       odom.pose.pose.orientation.w = quat_yaw[3]
-      odom.twist.twist = Twist(Vector3(data["VELOCITY_X"] / 1000.0, data["VELOCITY_Y"] / 1000.0, 0), Vector3(0, 0, imu.angular_velocity.z))
-      odom.pose.covariance = self.ODOM_POSE_COVARIANCE
-      odom.twist.covariance = self.ODOM_TWIST_COVARIANCE
+
+      ## Odom's Twist ##
+      v_x = data["VELOCITY_X"] / 1000.0 # m/s
+      v_y = data["VELOCITY_Y"] / 1000.0 # m/s
+      magn = math.sqrt(math.pow(v_x, 2) + math.pow(v_y, 2))
+      odom_linear_velocity = Vector3(magn, 0, 0)
+      odom_angular_velocity = Vector3(0, 0, imu.angular_velocity.z)
+      odom.twist.twist = Twist(odom_linear_velocity, odom_angular_velocity)
+      #odom_linear_velocity = Vector3(v_x, v_y, 0)
+      #odom.twist.twist = Twist(Vector3(data["VELOCITY_X"] / 1000.0, data["VELOCITY_Y"] / 1000.0, 0), Vector3(0, 0, imu.angular_velocity.z))
+
+      ## Odom's Covariance ##
+      # Quando Sphero e' fermo possiamo diminuire la sua covarianza per aumentarne
+      # l'affidabilita' nella sensor fusion eseguita a valle da Kalman.
+      if data["VELOCITY_X"] == 0 and data["VELOCITY_Y"] == 0 and imu.angular_velocity.z == float(0):
+          odom.pose.covariance = self.ODOM_POSE_COVARIANCE_STILL
+          odom.twist.covariance = self.ODOM_TWIST_COVARIANCE_STILL
+      else:
+          odom.pose.covariance = self.ODOM_POSE_COVARIANCE
+          odom.twist.covariance = self.ODOM_TWIST_COVARIANCE
+
       self.odom_pub.publish(odom)
 
-      marker = Marker(header=rospy.Header(frame_id="base_link"))
-      marker.ns = "basic_shapes"
-      marker.id = 0
-      marker.type = Marker.ARROW
-      marker.action = Marker.ADD
-      marker.pose.orientation.x = quat_yaw[0]
-      marker.pose.orientation.y = quat_yaw[1]
-      marker.pose.orientation.z = quat_yaw[2]
-      marker.pose.orientation.w = quat_yaw[3]
-      marker.scale = Vector3(0.5, 0.01, 0.01)
-      marker.color = ColorRGBA(1.0, 0.0, 0.0, 1.0)
-      marker.lifetime = rospy.Duration()
-      
-      self.visualization_pub.publish(marker)
 
+      #marker = Marker(header=rospy.Header(frame_id="base_link"))
+      #marker.ns = "basic_shapes"
+      #marker.id = 0
+      #marker.type = Marker.ARROW
+      #marker.action = Marker.ADD
+      #marker.pose.orientation.x = quat_yaw[0]
+      #marker.pose.orientation.y = quat_yaw[1]
+      #marker.pose.orientation.z = quat_yaw[2]
+      #marker.pose.orientation.w = quat_yaw[3]
+      #marker.scale = Vector3(0.5, 0.01, 0.01)
+      #marker.color = ColorRGBA(1.0, 0.0, 0.0, 1.0)
+      #marker.lifetime = rospy.Duration()
+      #self.visualization_pub.publish(marker)
+
+      ## transforms publishing
       # need to publish this trasform to show the roll, pitch, and yaw properly
       # yaw of the reference frame does not change
       self.transform_broadcaster.sendTransform((0, 0, -0.0381), (0, 0, 0, 1), now, "base_footprint", "base_link")
-      self.transform_broadcaster.sendTransform((0, 0, 0, 0), (0, 0, 0, 1), now, "imu_link", "base_link")
-      #here I should publish from transform odom->base_link
-      #base_footprint is the projection of base link on the floor, so it should have same yaw, whereas roll and pitch should be 0 wrt odom frame
-      self.transform_broadcaster.sendTransform((pos[0], pos[1], pos[2] + 0.0381), (0, 0, 0, 1), now, "base_link", "odom")
-#       self.current_speed = math.sqrt(math.pow(odom.twist.twist.linear.x, 2) + math.pow(odom.twist.twist.linear.y, 2))
+
+      #self.transform_broadcaster.sendTransform((0, 0, 0, 0), (0, 0, 0, 1), now, "imu_link", "base_link")
+
+      # here I should publish from transform `odom->base_link`
+      # 'base_footprint' is the projection of base link on the floor, so it should have same yaw, whereas roll and pitch
+      # should be 0 wrt odom frame
+      self.transform_broadcaster.sendTransform((pos[0], pos[1], pos[2] + 0.0381), quat_yaw, now, "base_link", "odom")
+      ##self.transform_broadcaster.sendTransform((pos[0], pos[1], pos[2] + 0.0381), (0, 0, 0, 1), now, "base_link", "odom")
+
+      #self.current_speed = math.sqrt(math.pow(odom.twist.twist.linear.x, 2) + math.pow(odom.twist.twist.linear.y, 2))
 
   def cmd_vel(self, msg):
     if self.is_connected:
@@ -361,31 +432,31 @@ class SpheroNode(object):
       if self.target_speed > 0.01:
         self.cmd_heading = int(self.normalize_angle_positive(math.atan2(msg.linear.x, msg.linear.y)) * 180.0 / math.pi)
       #self.cmd_heading = int(self.normalize_angle_positive(-math.atan2(msg.linear.y, msg.linear.x)) * 180.0 / math.pi)
-      
+
       #self.robot.roll(int(self.cmd_speed), int(self.cmd_heading), 1, False)
-      
+
   def heading_degrees(self, msg):
     self.heading(msg.data * math.pi / 180.0)
-      
+
   def heading_radians(self, msg):
     self.heading(msg.data)
-      
+
   def heading(self, rad):
     if self.is_connected:
-	  #for sphero heading 0 is along positive y axis, but we want to follow ROS convention and have it along positive x
-	  #also, sphero increases heading clockwise and ROS conventions counter-clockwise
-	  # angle_sphero = -angle_ros + 90deg
+      #for sphero heading 0 is along positive y axis, but we want to follow ROS convention and have it along positive x
+      #also, sphero increases heading clockwise and ROS conventions counter-clockwise
+      # angle_sphero = -angle_ros + 90deg
       #self.cmd_heading = int(self.normalize_angle_positive(-rad + 1.570796) * 180.0 / math.pi)
       #maybe needs to be negated
       self.cmd_heading = int(self.normalize_angle_positive(-rad) * 180.0 / math.pi)
       #self.robot.roll(self.cmd_speed, int(self.cmd_heading), 1, False)
-      
+
   def speed(self, msg):
     if self.is_connected:
       self.last_cmd_vel_time = rospy.Time.now()
       self.target_speed = msg.data
       #self.robot.roll(self.cmd_speed, int(self.cmd_heading), 1, False)
-      
+
   def set_color(self, msg):
     if self.is_connected:
       self.robot.set_rgb_led(int(msg.r * 255), int(msg.g * 255), int(msg.b * 255), 0, False)
@@ -409,7 +480,7 @@ class SpheroNode(object):
       self.robot.set_heading(int(self.normalize_angle_positive(-msg.data)), False)
 
   def set_heading(self, msg):
-    if self.is_connected: 
+    if self.is_connected:
       self.robot.set_heading(int(self.normalize_angle_positive(-msg.data) * 180.0 / math.pi), False)
 
   def configure_collision_detect(self, msg):
@@ -425,13 +496,13 @@ class SpheroNode(object):
 #     if level == 1:
 #       self.cutoff_freq = config['cutoff_frequency']
 #       self.cutoff_changed = True
-#       
+#
 #     return config
-      
+
   def configure_locator(self, msg):
     if self.is_connected:
-      self.robot.configure_locator(int(msg.x * 100), int(msg.y * 100), int(self.normalize_angle_positive(msg.theta) * 180.0 / math.pi))     
-        
+      self.robot.configure_locator(int(msg.x * 100), int(msg.y * 100), int(self.normalize_angle_positive(msg.theta) * 180.0 / math.pi))
+
 if __name__ == '__main__':
   s = SpheroNode()
   s.start()
