@@ -58,7 +58,8 @@ class SpheroNode(object):
                     3:"Battery Low",
                     4:"Battery Critical"}
 
-  ## Rispetto all'originale ho cambiato
+  ## Rispetto all'originale ho aumentato di un ordine di grandezza la precisione su x, y, vx e vy
+  ## Rispetto all'originale ho aumentato di 7 ordini di grandezza la precisione su yaw e v_yaw (1e3 ---> 1e-4)
 
   #ODOM_POSE_COVARIANCE = [1e-3, 0, 0, 0, 0, 0,
                           #0, 1e-3, 0, 0, 0, 0,
@@ -67,13 +68,13 @@ class SpheroNode(object):
                           #0, 0, 0, 0, 1e6, 0,
                           #0, 0, 0, 0, 0, 1e3]
 
-
   #ODOM_TWIST_COVARIANCE = [1e-3, 0, 0, 0, 0, 0,
                            #0, 1e-3, 0, 0, 0, 0,
                            #0, 0, 1e6, 0, 0, 0,
                            #0, 0, 0, 1e6, 0, 0,
                            #0, 0, 0, 0, 1e6, 0,
                            #0, 0, 0, 0, 0, 1e3]
+
 
   ODOM_POSE_COVARIANCE = [1e-4, 0, 0, 0, 0, 0,
                           0, 1e-4, 0, 0, 0, 0,
@@ -319,69 +320,87 @@ class SpheroNode(object):
       # - 'sphero_api_1.50.pdf', pag 29-30.
       # - oppure su github 'https://github.com/orbotix/Sphero-iOS-SDK/tree/master/samples/SensorStreaming'
 
-      # Le unita' di misura in cui sono ritornati i quaternioni sono 1/10000
-      quat = ( data["QUATERNION_Q1"] / 10000.0, #x
-               data["QUATERNION_Q2"] / 10000.0, #y
-               data["QUATERNION_Q3"] / 10000.0, #z
-               data["QUATERNION_Q0"] / 10000.0 )#w
+      # Quaternion_Q1,2,3,0 [1/10000 Q]
+      quat = ( data["QUATERNION_Q1"] / 10000.0,   # x
+               data["QUATERNION_Q2"] / 10000.0,   # y
+               data["QUATERNION_Q3"] / 10000.0,   # z
+               data["QUATERNION_Q0"] / 10000.0 )  # w
 
+      ### IMU ###
       imu = Imu(header=rospy.Header(frame_id="imu_link"))
       imu.header.stamp = now
-      imu.orientation.x = quat[0]
-      imu.orientation.y = quat[1]
-      imu.orientation.z = quat[2]
-      imu.orientation.w = quat[3]
-      imu.linear_acceleration.x = data["ACCEL_X_FILTERED"] / 4096.0 * 9.8
-      imu.linear_acceleration.y = data["ACCEL_Y_FILTERED"] / 4096.0 * 9.8
-      imu.linear_acceleration.z = data["ACCEL_Z_FILTERED"] / 4096.0 * 9.8
-      # I dati ritornati dal giroscopio sono misurati in 0.1 degrees per second,
-      # prima di salvarli li convertiamo in radianti per second.
-      imu.angular_velocity.x = data["GYRO_X_FILTERED"] / 10.0 * (math.pi / 180.0)
-      imu.angular_velocity.y = data["GYRO_Y_FILTERED"] / 10.0 * (math.pi / 180.0)
-      imu.angular_velocity.z = data["GYRO_Z_FILTERED"] / 10.0 * (math.pi / 180.0)
-
-      self.imu = imu
-      self.imu_pub.publish(self.imu)
-
-      ### ODOMETRIA ###
-
-      ## Odom's Pose ##
-      pos = ( data["ODOM_X"] / 100.0,
-              data["ODOM_Y"] / 100.0,
-              0.0 )
 
       euler = tf.transformations.euler_from_quaternion(quat)
       # rotazione di 90 per usare sphero in maniera coerente agli standard ROS
       euler = (euler[0], euler[1], -euler[2] + math.pi/2)
-      quat_yaw = tf.transformations.quaternion_from_euler(0, 0, euler[2])
+      print "imu_euler yaw =", euler[2] * (180/math.pi)
 
-      #XXX: quando si fa ruotare sphero
-      # - il valore dello yaw si incrementa con un movimento
-      #   antiorario, come e' giusto che sia
-      # - quando la velocita angolare si assesta, il valore oscilla
-      #   intorno a 0
-      #print "odom_yaw =", euler[2] * (180/math.pi)
+      rot_quat = tf.transformations.quaternion_from_euler(euler[0], euler[1], euler[2])
+      imu.orientation.x = rot_quat[0]
+      imu.orientation.y = rot_quat[1]
+      imu.orientation.z = rot_quat[2]
+      imu.orientation.w = rot_quat[3]
+      imu.orientation_covariance = [1e-6, 0, 0, 0, 1e-6, 0, 0, 0, 1e-6]
 
+      # Accelerometer axis X, Y, Z filtered [1/4096 G]
+      imu.linear_acceleration.x = (data["ACCEL_X_FILTERED"] / 4096.0) * 9.8
+      imu.linear_acceleration.y = (data["ACCEL_Y_FILTERED"] / 4096.0) * 9.8
+      imu.linear_acceleration.z = (data["ACCEL_Z_FILTERED"] / 4096.0) * 9.8
+      imu.linear_acceleration_covariance = [1e-6, 0, 0, 0, 1e-6, 0, 0, 0, 1e-6]
+
+      # Gyro axis X, Y, Z filtered [0.1 dps]
+      # Convertiamo i dati in radianti al secondo, come se li aspetta il msg sensor_msgs/IMU
+      imu.angular_velocity.x = (data["GYRO_X_FILTERED"] / 10.0) * (math.pi / 180.0)
+      imu.angular_velocity.y = (data["GYRO_Y_FILTERED"] / 10.0) * (math.pi / 180.0)
+      imu.angular_velocity.z = (data["GYRO_Z_FILTERED"] / 10.0) * (math.pi / 180.0)
+      imu.angular_velocity_covariance = [1e-6, 0, 0, 0, 1e-6, 0, 0, 0, 1e-6]
+
+      self.imu = imu
+      self.imu_pub.publish(self.imu)
+
+
+      ### ODOMETRIA ###
       odom = Odometry(header=rospy.Header(frame_id="odom"), child_frame_id='base_footprint')
       odom.header.stamp = now
+
+      # Odometer X, Y [cm]
+      odom_position = ( data["ODOM_X"] / 100.0, data["ODOM_Y"] / 100.0, 0.0 )
+      odom.pose.pose.position.x = odom_position[0]
+      odom.pose.pose.position.y = odom_position[1]
+      odom.pose.pose.position.z = odom_position[2]
+
       # publish yaw in pose
-      odom.pose.pose.position.x = pos[0]
-      odom.pose.pose.position.y = pos[1]
-      odom.pose.pose.position.z = pos[2]
-      odom.pose.pose.orientation.x = quat_yaw[0]
-      odom.pose.pose.orientation.y = quat_yaw[1]
-      odom.pose.pose.orientation.z = quat_yaw[2]
-      odom.pose.pose.orientation.w = quat_yaw[3]
+      #euler = tf.transformations.euler_from_quaternion(quat)
+      # rotazione di 90 per usare sphero in maniera coerente agli standard ROS
+      #euler = (euler[0], euler[1], -euler[2] + math.pi/2)
+      #quat_yaw = tf.transformations.quaternion_from_euler(0, 0, euler[2])
+
+      #XXX: quando si fa ruotare sphero
+      # - il valore dello yaw si incrementa con un movimento antiorario, come e' giusto che sia
+      # - quando la velocita angolare si assesta, il valore oscilla intorno a 0
+      #print "odom yaw =", euler[2] * (180/math.pi)
+
+      #odom.pose.pose.orientation.x = quat_yaw[0]
+      #odom.pose.pose.orientation.y = quat_yaw[1]
+      #odom.pose.pose.orientation.z = quat_yaw[2]
+      #odom.pose.pose.orientation.w = quat_yaw[3]
+
+      # identity quaternion
+      odom.pose.pose.orientation.x = 0
+      odom.pose.pose.orientation.y = 0
+      odom.pose.pose.orientation.z = 0
+      odom.pose.pose.orientation.w = 1
 
       ## Odom's Twist ##
-      v_x = data["VELOCITY_X"] / 1000.0 # m/s
-      v_y = data["VELOCITY_Y"] / 1000.0 # m/s
+      # Velocity X, Y [mm/s]
+      v_x = data["VELOCITY_X"] / 1000.0
+      v_y = data["VELOCITY_Y"] / 1000.0
       magn = math.sqrt(math.pow(v_x, 2) + math.pow(v_y, 2))
       odom_linear_velocity = Vector3(magn, 0, 0)
+
       odom_angular_velocity = Vector3(0, 0, imu.angular_velocity.z)
+
       odom.twist.twist = Twist(odom_linear_velocity, odom_angular_velocity)
-      #odom_linear_velocity = Vector3(v_x, v_y, 0)
-      #odom.twist.twist = Twist(Vector3(data["VELOCITY_X"] / 1000.0, data["VELOCITY_Y"] / 1000.0, 0), Vector3(0, 0, imu.angular_velocity.z))
 
       ## Odom's Covariance ##
       # Quando Sphero e' fermo possiamo diminuire la sua covarianza per aumentarne
@@ -420,8 +439,9 @@ class SpheroNode(object):
       # here I should publish from transform `odom->base_link`
       # 'base_footprint' is the projection of base link on the floor, so it should have same yaw, whereas roll and pitch
       # should be 0 wrt odom frame
-      self.transform_broadcaster.sendTransform((pos[0], pos[1], pos[2] + 0.0381), quat_yaw, now, "base_link", "odom")
-      ##self.transform_broadcaster.sendTransform((pos[0], pos[1], pos[2] + 0.0381), (0, 0, 0, 1), now, "base_link", "odom")
+      #self.transform_broadcaster.sendTransform((odom_position[0], odom_position[1], odom_position[2] + 0.0381), quat_yaw, now, "base_link", "odom")
+      ##self.transform_broadcaster.sendTransform((odom_position[0], odom_position[1], odom_position[2] + 0.0381), (0, 0, 0, 1), now, "base_link", "odom")
+      self.transform_broadcaster.sendTransform((odom_position[0], odom_position[1], odom_position[2] + 0.0381), rot_quat, now, "base_link", "odom")
 
       #self.current_speed = math.sqrt(math.pow(odom.twist.twist.linear.x, 2) + math.pow(odom.twist.twist.linear.y, 2))
 

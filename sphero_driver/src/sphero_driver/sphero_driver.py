@@ -162,7 +162,7 @@ STRM_MASK2 = dict(
   ACCELONE           = 0x02000000,
   VELOCITY_X         = 0x01000000,
   VELOCITY_Y         = 0x00800000)
-  
+
 MACRO_CMD = dict(
   MACRO_END             = 0x00,
   SET_SD1               = 0x01,
@@ -335,7 +335,7 @@ class Sphero(threading.Thread):
 
   def clamp(self, n, minn, maxn):
     return max(min(maxn, n), minn)
-    
+
   def ping(self, response):
     """
     The Ping command is used to verify both a solid data link with the
@@ -611,7 +611,7 @@ class Sphero(threading.Thread):
     """
     Helper function to add all the filtered data to the data strm
     mask, so that the user doesn't have to set the data strm manually.
-    
+
     :param sample_div: divisor of the maximum sensor sampling rate.
     :param sample_frames: number of sample frames emitted per packet.
     :param pcnt: packet count (set to 0 for unlimited streaming).
@@ -630,7 +630,7 @@ class Sphero(threading.Thread):
     """
     Helper function to add all the raw data to the data strm mask, so
     that the user doesn't have to set the data strm manually.
-    
+
     :param sample_div: divisor of the maximum sensor sampling rate.
     :param sample_frames: number of sample frames emitted per packet.
     :param pcnt: packet count (set to 0 for unlimited streaming).
@@ -650,7 +650,7 @@ class Sphero(threading.Thread):
     """
     Helper function to add all the data to the data strm mask, so
     that the user doesn't have to set the data strm manually.
-    
+
     :param sample_div: divisor of the maximum sensor sampling rate.
     :param sample_frames: number of sample frames emitted per packet.
     :param pcnt: packet count (set to 0 for unlimited streaming).
@@ -775,9 +775,9 @@ class Sphero(threading.Thread):
       | SOP1 | SOP2 | DID | CID | SEQ | DLEN | <data> | CHK |
       -------------------------------------------------------
 
-    * SOP1 - start packet 1 - Always 0xff. 
+    * SOP1 - start packet 1 - Always 0xff.
     * SOP2 - start packet 2 - Set to 0xff when an acknowledgement is
-      expected, 0xfe otherwise.    
+      expected, 0xfe otherwise.
     * DID - Device ID
     * CID - Command ID
     * SEQ - Sequence Number - This client field is echoed in the
@@ -856,7 +856,7 @@ class Sphero(threading.Thread):
       with self._communication_lock:
         self.raw_data_buf += self.bt.recv(num_bytes)
       data = self.raw_data_buf
-      
+
       while len(data)>5:
         if data[:2] == RECV['SYNC']:
           # print "got response packet"
@@ -891,13 +891,13 @@ class Sphero(threading.Thread):
             if data[i] == '\xff' and (i+1) < len(data) and (data[i+1] == '\xff' or data[i+1] == '\xfe'):
               start_packet = i
               break
-              
+
           if start_packet >= 0:
             data = data[start_packet:]
           else:
             break
             #raise RuntimeError("Bad SOF : " + self.data2hexstr(data))
-      
+
       self.raw_data_buf=data
 
   def parse_pwr_notify(self, data, data_length):
@@ -909,10 +909,10 @@ class Sphero(threading.Thread):
       |State |
       --------
 
-    The power state byte: 
-      * 01h = Battery Charging, 
+    The power state byte:
+      * 01h = Battery Charging,
       * 02h = Battery OK,
-      * 03h = Battery Low, 
+      * 03h = Battery Low,
       * 04h = Battery Critical
     '''
     return struct.unpack_from('B', ''.join(data[5:]))[0]
@@ -943,7 +943,7 @@ class Sphero(threading.Thread):
     this value.
     '''
     output={}
-    
+
     output['X'], output['Y'], output['Z'], output['Axis'], output['xMagnitude'], output['yMagnitude'], output['Speed'], output['Timestamp'] = struct.unpack_from('>hhhbhhbI', ''.join(data[5:]))
     return output
 
@@ -960,7 +960,7 @@ class Sphero(threading.Thread):
     self.is_connected = False
     self.bt.close()
     return self.is_connected
-  
+
   def configure_locator(self, x, y, yaw_tare, auto_correct_yaw = True, response = False):
     '''
     Through the streaming interface, Sphero provides real-time location data in the form of (X,Y) coordinates on the ground plane.
@@ -972,7 +972,7 @@ class Sphero(threading.Thread):
     If you use the Set Heading feature in the drive app to turn 90 degrees, you will still have heading 0, but the locator knows you have turned 90 degrees and are now facing down the X-axis.
     This feature can be turned off, in which case the locator knows nothing about the Set Heading command.
     This can lead to some strange results. For instance, if you drive using only roll commands with heading 0 and set heading commands to change direction the locator will perceive your entire path as lying on the Y-axis.
-    
+
     :param X, Y: The current (X,Y) coordinates of Sphero on the ground plane in centimeters.
     :param Yaw Tare: Controls how the X,Y-plane is aligned with Sphero's heading coordinate system. When this parameter is set to zero, it means that having yaw = 0 corresponds to facing down the Y- axis in the positive direction. The value will be interpreted in the range 0-359 inclusive
     :param Auto Correct Yaw: Determines whether calibrate commands automatically correct the yaw tare value. When false, the positive Y axis coincides with heading 0 (assuming you do not change the yaw tare manually using this API command).
@@ -983,44 +983,44 @@ class Sphero(threading.Thread):
 
   def save_macro(self, macro_builder, response = False):
     self.send(self.pack_cmd(REQ['CMD_SAVE_MACRO'] if macro_builder.get_id() != 255 else REQ['CMD_SAVE_TEMP_MACRO'], macro_builder.create_macro()), response)
-    
+
   def run_macro(self, macro_id = 255, response = False):
     self.send(self.pack_cmd(REQ['CMD_RUN_MACRO'], [macro_id]), response)
-    
+
   def abort_macro(self, response = False):
-    self.send(self.pack_cmd(REQ['CMD_ABORT_MACRO'], []), response) 
-    
+    self.send(self.pack_cmd(REQ['CMD_ABORT_MACRO'], []), response)
+
   def set_permanent_opt_flags(self, flags, response = False):
     self.send(self.pack_cmd(REQ['CMD_SET_PERM_OPT_FLAGS'], [flags>>24 & 0xff, flags>>16 & 0xff, flags>>8 & 0xff, flags & 0xff]), response)
-    
+
   def get_permanent_opt_flags(self, response = True):
     self.send(self.pack_cmd(REQ['CMD_GET_PERM_OPT_FLAGS'], []), response)
-    
+
   def set_temporary_opt_flags(self, flags, response = False):
     self.send(self.pack_cmd(REQ['CMD_SET_TMP_OPT_FLAGS'], [flags>>24 & 0xff, flags>>16 & 0xff, flags>>8 & 0xff, flags & 0xff]), response)
-    
+
   def get_temporary_opt_flags(self, response = True):
     self.send(self.pack_cmd(REQ['CMD_GET_TMP_OPT_FLAGS'], []), response)
-    
+
 class MacroBuilder:
   def __init__(self, macro_id = 255, flags = 0, ext_flags = 0):
     self.macro_id = macro_id
     self.flags = flags
     self.ext_flags = ext_flags
     self.commands = []
-  
+
   def clamp(self, n, minn, maxn):
     return max(min(maxn, n), minn)
-  
+
   def reset(self):
     self.commands = []
-  
+
   def get_commands(self):
     return self.commands
-  
+
   def get_id(self):
     return self.macro_id
-  
+
   def create_macro(self):
     macro = [self.macro_id]
     if self.ext_flags != 0:
@@ -1028,154 +1028,154 @@ class MacroBuilder:
       macro += [self.flags, self.ext_flags]
     else:
       macro += [self.flags]
-      
+
     map(macro.extend, self.commands)
-    
+
     macro.append(0)
     if len(macro) > 254:
       raise RuntimeError("Macro too long")
-    
+
     return macro
-  
+
   def set_stabilization(self, enabled, post_cmd_delay):
     self.commands.append([MACRO_CMD['SET_STABILIZATION'], 1 if enabled else 0, self.clamp(post_cmd_delay, 0, 255)])
     return self
-  
+
   def set_heading(self, heading, post_cmd_delay):
     heading = self.clamp(heading, 0, 359)
     self.commands.append([MACRO_CMD['SET_HEADING'], heading>>8 & 0xff, heading & 0xff, self.clamp(post_cmd_delay, 0, 255)])
     return self
-  
+
   def set_rotation_rate(self, rate):
     self.commands.append([MACRO_CMD['SET_ROTATION_RATE'], self.clamp(rate, 0, 255)])
     return self
-  
+
   def delay(self, time):
     self.commands.append([MACRO_CMD['DELAY'], time>>8 & 0xff, time & 0xff])
     return self
-  
+
   def _set_sd(self, cmd, delay):
     self.commands.append([cmd, delay>>8 & 0xff, delay & 0xff])
     return self
-  
+
   def set_sd1(self, delay):
     return self._set_sd(MACRO_CMD['SET_SD1'], delay)
-  
+
   def set_sd2(self, delay):
     return self._set_sd(MACRO_CMD['SET_SD2'], delay)
-  
+
   def _set_spd(self, cmd, speed):
     self.commands.append([cmd, speed>>8 & 0xff, speed & 0xff])
     return self
-  
+
   def set_spd1(self, speed):
     return self._set_spd(MACRO_CMD['SET_SPD1'], speed)
 
   def set_spd2(self, speed):
     return self._set_spd(MACRO_CMD['SET_SPD2'], speed)
-  
+
   def roll(self, speed, heading, post_cmd_delay):
     heading = self.clamp(heading, 0, 359)
     cmd = MACRO_CMD['ROLL'] if post_cmd_delay <= 255 else MACRO_CMD['ROLL2']
     delay = [self.clamp(post_cmd_delay, 0, 255)] if post_cmd_delay <= 255 else [post_cmd_delay>>8 & 0xff, post_cmd_delay & 0xff]
     self.commands.append([cmd, self.clamp(speed, 0, 255), heading>>8 & 0xff, heading & 0xff] + delay)
     return self
-  
+
   def set_speed(self, speed, post_cmd_delay):
     self.commands.append([MACRO_CMD['SET_SPEED'], self.clamp(speed, 0, 255), self.clamp(post_cmd_delay, 0, 255)])
     return self
-  
+
   def roll_with_sd1(self, speed, heading):
     heading = self.clamp(heading, 0, 359)
     self.commands.append([MACRO_CMD['ROLL_WITH_SD1'], heading>>8 & 0xff, heading & 0xff, self.clamp(speed, 0, 255)])
     return self
-  
+
   def _roll_at_spd_with_sd1(self, cmd, heading):
     heading = self.clamp(heading, 0, 359)
     self.commands.append([cmd, heading>>8 & 0xff, heading & 0xff])
     return self
-  
+
   def roll_at_spd1_with_sd1(self, heading):
     return self._roll_at_spd_with_sd1(MACRO_CMD['ROLL_AT_SPD1_WITH_SD1'], heading)
-  
+
   def roll_at_spd2_with_sd1(self, heading):
     return self._roll_at_spd_with_sd1(MACRO_CMD['ROLL_AT_SPD2_WITH_SD1'], heading)
-  
+
   def set_raw_motor_values(self, l_mode, l_power, r_mode, r_power, post_cmd_delay):
     self.commands.append([MACRO_CMD['SET_RAW_MOTOR_VALUES'], self.clamp(l_mode, 0, 4), self.clamp(l_power, 0, 255), self.clamp(r_mode, 0, 4), self.clamp(r_power, 0, 255), self.clamp(post_cmd_delay, 0, 255)])
     return self
-  
+
   def rotate_over_time(self, angle, time):
     self.commands.append([MACRO_CMD['ROTATE_OVER_TIME'], angle>>8 & 0xff, angle & 0xff, time>>8 & 0xff, time & 0xff])
     return self
-  
+
   def _rotate_over_sd(self, cmd, angle):
     self.commands.append([cmd, angle>>8 & 0xff, angle & 0xff])
     return self
-    
+
   def rotate_over_sd1(self, angle):
     return self._rotate_over_sd(MACRO_CMD['ROTATE_OVER_SD1'], angle)
-  
+
   def rotate_over_sd2(self, angle):
     return self._rotate_over_sd(MACRO_CMD['ROTATE_OVER_SD2'], angle)
 
   def wait_until_stopped(self, time):
     self.commands.append([MACRO_CMD['WAIT_UNTIL_STOPPED'], time>>8 & 0xff, time & 0xff])
     return self
-  
+
   def loop_start(self, count):
     self.commands.append([MACRO_CMD['LOOP_START'], self.clamp(count, 0, 255)])
     return self
-  
+
   def loop_start_system(self):
     self.commands.append([MACRO_CMD['LOOP_START_SYSTEM']])
     return self
-  
+
   def loop_end(self):
     self.commands.append([MACRO_CMD['LOOP_END']])
     return self
-  
+
   def comment(self, msg):
     size = len(msg)
     self.commands.append([MACRO_CMD['COMMENT'], size>>8 & 0xff, size & 0xff] + list(msg))
     return self
-  
+
   def set_rgb_led(self, red, green, blue, post_cmd_delay):
     self.commands.append([MACRO_CMD['SET_RGB_LED'], self.clamp(red, 0, 255), self.clamp(green, 0, 255), self.clamp(blue, 0, 255), self.clamp(post_cmd_delay, 0, 255)])
     return self
-  
+
   def set_rgb_led_with_sd2(self, red, green, blue):
     self.commands.append([MACRO_CMD['SET_RGB_LED_WITH_SD2'], self.clamp(red, 0, 255), self.clamp(green, 0, 255), self.clamp(blue, 0, 255)])
     return self
-  
+
   def fade_to_rgb(self, red, green, blue, time):
     self.commands.append([MACRO_CMD['FADE_TO_RGB'], self.clamp(red, 0, 255), self.clamp(green, 0, 255), self.clamp(blue, 0, 255), time>>8 & 0xff, time & 0xff])
     return self
-  
+
   def set_back_led(self, value, post_cmd_delay):
     self.commands.append([MACRO_CMD['SET_BACK_LED'], self.clamp(value, 0, 255), self.clamp(post_cmd_delay, 0, 255)])
     return self
-  
+
   def goto(self, target):
     self.commands.append([MACRO_CMD['GOTO'], self.clamp(target, 1, 255)])
     return self
-  
+
   def gosub(self, target):
     self.commands.append([MACRO_CMD['GOSUB'], self.clamp(target, 1, 255)])
     return self
-  
+
   def branch_on_collision(self, target):
     self.commands.append([MACRO_CMD['BRANCH_ON_COLLISION'], self.clamp(target, 1, 255)])
     return self
-  
+
   def configure_collision_detection(self, method, x_thresh, x_speed, y_thresh, y_speed, dead_time):
     self.commands.append([MACRO_CMD['CFG_COLLISION_DETECTION'], self.clamp(method, 0, 3), self.clamp(x_thresh, 0, 255), self.clamp(x_speed, 0, 255), self.clamp(y_thresh, 0, 255), self.clamp(y_speed, 0, 255), self.clamp(dead_time, 0, 255)])
     return self
-  
+
   def go_to_sleep(self, time):
     self.commands.append([MACRO_CMD['GO_TO_SLEEP'], time>>8 & 0xff, time & 0xff])
     return self
-  
+
   def emit_marker(self, marker):
     self.commands.append([MACRO_CMD['EMIT_MARKER'], self.clamp(marker, 0, 255)])
     return self
