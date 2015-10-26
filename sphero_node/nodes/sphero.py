@@ -59,7 +59,7 @@ class SpheroNode(object):
                     4:"Battery Critical"}
 
   ## Rispetto all'originale ho aumentato di un ordine di grandezza la precisione su x, y, vx e vy
-  ## Rispetto all'originale ho aumentato di 7 ordini di grandezza la precisione su yaw e v_yaw (1e3 ---> 1e-4)
+  ## Rispetto all'originale ho aumentato di 0 ordini di grandezza la precisione su yaw e v_yaw (1e-4 ---> 1e-4)
 
   #ODOM_POSE_COVARIANCE = [1e-3, 0, 0, 0, 0, 0,
                           #0, 1e-3, 0, 0, 0, 0,
@@ -81,14 +81,14 @@ class SpheroNode(object):
                           0, 0, 1e-3, 0, 0, 0,
                           0, 0, 0, 1e3, 0, 0,
                           0, 0, 0, 0, 1e3, 0,
-                          0, 0, 0, 0, 0, 1e-4]
+                          0, 0, 0, 0, 0, 1e3]
 
   ODOM_TWIST_COVARIANCE = [1e-4, 0, 0, 0, 0, 0,
                            0, 1e-4, 0, 0, 0, 0,
                            0, 0, 1e-3, 0, 0, 0,
                            0, 0, 0, 1e3,  0, 0,
                            0, 0, 0, 0, 1e3,  0,
-                           0, 0, 0, 0, 0, 1e-4]
+                           0, 0, 0, 0, 0, 1e3]
 
   # XXX: le covarianze che vengono restituite quando Sphero e' immobile
   ODOM_POSE_COVARIANCE_STILL = [1e-6, 0, 0, 0, 0, 0,
@@ -321,17 +321,19 @@ class SpheroNode(object):
       # - oppure su github 'https://github.com/orbotix/Sphero-iOS-SDK/tree/master/samples/SensorStreaming'
 
       # Quaternion_Q1,2,3,0 [1/10000 Q]
+      # ROS quaternions go from 0 to 1
       quat = ( data["QUATERNION_Q1"] / 10000.0,   # x
                data["QUATERNION_Q2"] / 10000.0,   # y
                data["QUATERNION_Q3"] / 10000.0,   # z
                data["QUATERNION_Q0"] / 10000.0 )  # w
 
       ### IMU ###
+      # Standard per il messaggio IMU: 'http://docs.ros.org/api/sensor_msgs/html/msg/Imu.html'
       imu = Imu(header=rospy.Header(frame_id="imu_link"))
       imu.header.stamp = now
 
       euler = tf.transformations.euler_from_quaternion(quat)
-      # rotazione di 90 per usare sphero in maniera coerente agli standard ROS
+      # rotazione di 90 gradi per usare Sphero in maniera coerente agli standard ROS
       euler = (euler[0], euler[1], -euler[2] + math.pi/2)
       print "imu_euler yaw =", euler[2] * (180/math.pi)
 
@@ -343,17 +345,18 @@ class SpheroNode(object):
       imu.orientation_covariance = [1e-6, 0, 0, 0, 1e-6, 0, 0, 0, 1e-6]
 
       # Accelerometer axis X, Y, Z filtered [1/4096 G]
+      # Convertiamo i dati in [m/s^2], rispettando la convenzione di sensor_msgs/IMU
       imu.linear_acceleration.x = (data["ACCEL_X_FILTERED"] / 4096.0) * 9.8
       imu.linear_acceleration.y = (data["ACCEL_Y_FILTERED"] / 4096.0) * 9.8
       imu.linear_acceleration.z = (data["ACCEL_Z_FILTERED"] / 4096.0) * 9.8
-      imu.linear_acceleration_covariance = [1e-6, 0, 0, 0, 1e-6, 0, 0, 0, 1e-6]
+      imu.linear_acceleration_covariance = [1e-4, 0, 0, 0, 1e-4, 0, 0, 0, 1e-4]
 
       # Gyro axis X, Y, Z filtered [0.1 dps]
-      # Convertiamo i dati in radianti al secondo, come se li aspetta il msg sensor_msgs/IMU
+      # Convertiamo i dati in [rad/sec], rispettando la convenzione di sensor_msgs/IMU
       imu.angular_velocity.x = (data["GYRO_X_FILTERED"] / 10.0) * (math.pi / 180.0)
       imu.angular_velocity.y = (data["GYRO_Y_FILTERED"] / 10.0) * (math.pi / 180.0)
       imu.angular_velocity.z = (data["GYRO_Z_FILTERED"] / 10.0) * (math.pi / 180.0)
-      imu.angular_velocity_covariance = [1e-6, 0, 0, 0, 1e-6, 0, 0, 0, 1e-6]
+      imu.angular_velocity_covariance = [1e-4, 0, 0, 0, 1e-4, 0, 0, 0, 1e-4]
 
       self.imu = imu
       self.imu_pub.publish(self.imu)
@@ -432,18 +435,16 @@ class SpheroNode(object):
       ## transforms publishing
       # need to publish this trasform to show the roll, pitch, and yaw properly
       # yaw of the reference frame does not change
+      # transform base_link --> base_footprint
       self.transform_broadcaster.sendTransform((0, 0, -0.0381), (0, 0, 0, 1), now, "base_footprint", "base_link")
 
-      #self.transform_broadcaster.sendTransform((0, 0, 0, 0), (0, 0, 0, 1), now, "imu_link", "base_link")
+      # Il sistema di riferimento dell'IMU coincide con quello dell'odometria.
+      self.transform_broadcaster.sendTransform((0, 0, 0, 0), (0, 0, 0, 1), now, "imu_link", "base_link")
 
       # here I should publish from transform `odom->base_link`
       # 'base_footprint' is the projection of base link on the floor, so it should have same yaw, whereas roll and pitch
       # should be 0 wrt odom frame
-      #self.transform_broadcaster.sendTransform((odom_position[0], odom_position[1], odom_position[2] + 0.0381), quat_yaw, now, "base_link", "odom")
-      ##self.transform_broadcaster.sendTransform((odom_position[0], odom_position[1], odom_position[2] + 0.0381), (0, 0, 0, 1), now, "base_link", "odom")
       self.transform_broadcaster.sendTransform((odom_position[0], odom_position[1], odom_position[2] + 0.0381), rot_quat, now, "base_link", "odom")
-
-      #self.current_speed = math.sqrt(math.pow(odom.twist.twist.linear.x, 2) + math.pow(odom.twist.twist.linear.y, 2))
 
   def cmd_vel(self, msg):
     if self.is_connected:
