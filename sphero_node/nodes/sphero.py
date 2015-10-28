@@ -111,10 +111,10 @@ class SpheroNode(object):
     self._init_pubsub()
     self._init_params()
     self.robot = sphero_driver.Sphero()
-    self.imu = Imu()
-    self.imu.orientation_covariance = [1e-6, 0, 0, 0, 1e-6, 0, 0, 0, 1e-6]
-    self.imu.angular_velocity_covariance = [1e-6, 0, 0, 0, 1e-6, 0, 0, 0, 1e-6]
-    self.imu.linear_acceleration_covariance = [1e-6, 0, 0, 0, 1e-6, 0, 0, 0, 1e-6]
+    #self.imu = Imu()
+    #self.imu.orientation_covariance = [1e-6, 0, 0, 0, 1e-6, 0, 0, 0, 1e-6]
+    #self.imu.angular_velocity_covariance = [1e-6, 0, 0, 0, 1e-6, 0, 0, 0, 1e-6]
+    #self.imu.linear_acceleration_covariance = [1e-6, 0, 0, 0, 1e-6, 0, 0, 0, 1e-6]
     self.last_cmd_vel_time = self.last_diagnostics_time = rospy.Time.now()
     self.cmd_heading = 0
     self.cmd_speed = 0
@@ -125,7 +125,7 @@ class SpheroNode(object):
 
   def _init_pubsub(self):
     self.odom_pub = rospy.Publisher('odom', Odometry, queue_size=1)
-    self.imu_pub = rospy.Publisher('imu_data', Imu, queue_size=1)
+    #self.imu_pub = rospy.Publisher('imu_data', Imu, queue_size=1)
     self.collision_pub = rospy.Publisher('collision', SpheroCollision, queue_size=1)
     self.diag_pub = rospy.Publisher('diagnostics', DiagnosticArray, queue_size=1)
     self.visualization_pub = rospy.Publisher('visualization_marker', Marker, queue_size=1)
@@ -320,35 +320,43 @@ class SpheroNode(object):
       # - oppure su github 'https://github.com/orbotix/Sphero-iOS-SDK/tree/master/samples/SensorStreaming'
 
       # Le unita' di misura in cui sono ritornati i quaternioni sono 1/10000
+      # ROS quaternions go from 0 to 1
       quat = ( data["QUATERNION_Q1"] / 10000.0, #x
                data["QUATERNION_Q2"] / 10000.0, #y
                data["QUATERNION_Q3"] / 10000.0, #z
                data["QUATERNION_Q0"] / 10000.0 )#w
 
-      imu = Imu(header=rospy.Header(frame_id="imu_link"))
-      imu.header.stamp = now
-      imu.orientation.x = quat[0]
-      imu.orientation.y = quat[1]
-      imu.orientation.z = quat[2]
-      imu.orientation.w = quat[3]
-      imu.linear_acceleration.x = data["ACCEL_X_FILTERED"] / 4096.0 * 9.8
-      imu.linear_acceleration.y = data["ACCEL_Y_FILTERED"] / 4096.0 * 9.8
-      imu.linear_acceleration.z = data["ACCEL_Z_FILTERED"] / 4096.0 * 9.8
-      # I dati ritornati dal giroscopio sono misurati in 0.1 degrees per second,
-      # prima di salvarli li convertiamo in radianti per second.
-      imu.angular_velocity.x = data["GYRO_X_FILTERED"] / 10.0 * (math.pi / 180.0)
-      imu.angular_velocity.y = data["GYRO_Y_FILTERED"] / 10.0 * (math.pi / 180.0)
-      imu.angular_velocity.z = data["GYRO_Z_FILTERED"] / 10.0 * (math.pi / 180.0)
+      ### IMU ###
+      # Standard per il messaggio IMU: 'http://docs.ros.org/api/sensor_msgs/html/msg/Imu.html'
+      #imu = Imu(header=rospy.Header(frame_id="imu_link"))
+      #imu.header.stamp = now
+      #imu.orientation.x = quat[0]
+      #imu.orientation.y = quat[1]
+      #imu.orientation.z = quat[2]
+      #imu.orientation.w = quat[3]
+      # Accelerometer axis X, Y, Z filtered [1/4096 G]
+      # Convertiamo i dati in [m/s^2], rispettando la convenzione di sensor_msgs/IMU
+      #imu.linear_acceleration.x = data["ACCEL_X_FILTERED"] / 4096.0 * 9.8
+      #imu.linear_acceleration.y = data["ACCEL_Y_FILTERED"] / 4096.0 * 9.8
+      #imu.linear_acceleration.z = data["ACCEL_Z_FILTERED"] / 4096.0 * 9.8
+      # Gyro axis X, Y, Z filtered [0.1 dps]
+      # Convertiamo i dati in [rad/sec], rispettando la convenzione di sensor_msgs/IMU
+      #imu.angular_velocity.x = data["GYRO_X_FILTERED"] / 10.0 * (math.pi / 180.0)
+      #imu.angular_velocity.y = data["GYRO_Y_FILTERED"] / 10.0 * (math.pi / 180.0)
+      #imu.angular_velocity.z = data["GYRO_Z_FILTERED"] / 10.0 * (math.pi / 180.0)
 
-      self.imu = imu
-      self.imu_pub.publish(self.imu)
+      #self.imu = imu
+      #self.imu_pub.publish(self.imu)
 
       ### ODOMETRIA ###
+      odom = Odometry(header=rospy.Header(frame_id="odom"), child_frame_id='base_footprint')
+      odom.header.stamp = now
 
-      ## Odom's Pose ##
-      pos = ( data["ODOM_X"] / 100.0,
-              data["ODOM_Y"] / 100.0,
-              0.0 )
+      # Odometer X, Y [cm]
+      pos = ( data["ODOM_X"] / 100.0, data["ODOM_Y"] / 100.0, 0.0 )
+      odom.pose.pose.position.x = pos[0]
+      odom.pose.pose.position.y = pos[1]
+      odom.pose.pose.position.z = pos[2]
 
       euler = tf.transformations.euler_from_quaternion(quat)
       # rotazione di 90 per usare sphero in maniera coerente agli standard ROS
@@ -362,31 +370,30 @@ class SpheroNode(object):
       #   intorno a 0
       #print "odom_yaw =", euler[2] * (180/math.pi)
 
-      odom = Odometry(header=rospy.Header(frame_id="odom"), child_frame_id='base_footprint')
-      odom.header.stamp = now
       # publish yaw in pose
-      odom.pose.pose.position.x = pos[0]
-      odom.pose.pose.position.y = pos[1]
-      odom.pose.pose.position.z = pos[2]
       odom.pose.pose.orientation.x = quat_yaw[0]
       odom.pose.pose.orientation.y = quat_yaw[1]
       odom.pose.pose.orientation.z = quat_yaw[2]
       odom.pose.pose.orientation.w = quat_yaw[3]
 
       ## Odom's Twist ##
-      v_x = data["VELOCITY_X"] / 1000.0 # m/s
-      v_y = data["VELOCITY_Y"] / 1000.0 # m/s
+      # Velocity X, Y [mm/s]
+      v_x = data["VELOCITY_X"] / 1000.0
+      v_y = data["VELOCITY_Y"] / 1000.0
       magn = math.sqrt(math.pow(v_x, 2) + math.pow(v_y, 2))
       odom_linear_velocity = Vector3(magn, 0, 0)
-      odom_angular_velocity = Vector3(0, 0, imu.angular_velocity.z)
+
+      # Gyro axis X, Y, Z filtered [0.1 dps]
+      # Convertiamo i dati in [rad/sec], rispettando la convenzione di ROS sugli angoli
+      angular_velocity_z = data["GYRO_Z_FILTERED"] / 10.0 * (math.pi / 180.0)
+      odom_angular_velocity = Vector3(0, 0, angular_velocity_z)
+
       odom.twist.twist = Twist(odom_linear_velocity, odom_angular_velocity)
-      #odom_linear_velocity = Vector3(v_x, v_y, 0)
-      #odom.twist.twist = Twist(Vector3(data["VELOCITY_X"] / 1000.0, data["VELOCITY_Y"] / 1000.0, 0), Vector3(0, 0, imu.angular_velocity.z))
 
       ## Odom's Covariance ##
       # Quando Sphero e' fermo possiamo diminuire la sua covarianza per aumentarne
       # l'affidabilita' nella sensor fusion eseguita a valle da Kalman.
-      if data["VELOCITY_X"] == 0 and data["VELOCITY_Y"] == 0 and imu.angular_velocity.z == float(0):
+      if data["VELOCITY_X"] == 0 and data["VELOCITY_Y"] == 0 and angular_velocity_z == float(0):
           odom.pose.covariance = self.ODOM_POSE_COVARIANCE_STILL
           odom.twist.covariance = self.ODOM_TWIST_COVARIANCE_STILL
       else:
@@ -395,20 +402,6 @@ class SpheroNode(object):
 
       self.odom_pub.publish(odom)
 
-
-      #marker = Marker(header=rospy.Header(frame_id="base_link"))
-      #marker.ns = "basic_shapes"
-      #marker.id = 0
-      #marker.type = Marker.ARROW
-      #marker.action = Marker.ADD
-      #marker.pose.orientation.x = quat_yaw[0]
-      #marker.pose.orientation.y = quat_yaw[1]
-      #marker.pose.orientation.z = quat_yaw[2]
-      #marker.pose.orientation.w = quat_yaw[3]
-      #marker.scale = Vector3(0.5, 0.01, 0.01)
-      #marker.color = ColorRGBA(1.0, 0.0, 0.0, 1.0)
-      #marker.lifetime = rospy.Duration()
-      #self.visualization_pub.publish(marker)
 
       ## transforms publishing
       # need to publish this trasform to show the roll, pitch, and yaw properly
